@@ -96,10 +96,12 @@ const App = () => {
         <div className="absolute inset-x-0 top-0 h-[340px] bg-[radial-gradient(circle_at_12%_10%,rgba(45,212,191,0.22),transparent_28%),linear-gradient(135deg,#08111f_0%,#10233f_48%,#0f3f3b_100%)]" />
         <div className="absolute inset-x-0 top-[300px] h-20 bg-gradient-to-b from-transparent to-[#f4f7fb]" />
 
-        <div className="relative mx-auto w-full max-w-[1540px] px-3 pb-10 pt-5 sm:px-5 lg:px-8">
-          <PageHero page={currentPage} activePage={activePage} onNavigate={navigate} />
+        <div className={`relative mx-auto w-full max-w-[1540px] px-3 pb-10 sm:px-5 lg:px-8 ${activePage === "templates" ? "pt-0" : "pt-5"}`}>
+          {activePage !== "templates" && (
+            <PageHero page={currentPage} activePage={activePage} onNavigate={navigate} />
+          )}
 
-          <div className="mt-5 min-w-0">
+          <div className={`${activePage === "templates" ? "mt-0" : "mt-5"} min-w-0`}>
             {activePage === "overview" && <OverviewPage onNavigate={navigate} />}
             {activePage === "templates" && <TemplateForm />}
             {activePage === "campaigns" && (

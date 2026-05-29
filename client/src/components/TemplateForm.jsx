@@ -1,5 +1,23 @@
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import {
+  AlignJustify,
+  ChevronDown,
+  Edit3,
+  FilePlus2,
+  Grid2X2,
+  Image,
+  Library,
+  List,
+  ListOrdered,
+  Minus,
+  Monitor,
+  MousePointer2,
+  Share2,
+  Space,
+  Table2,
+  Type
+} from "lucide-react";
 import { apiUrl } from "../api/Api";
 import ThemeEditor from "./templateBuilder/StylePanel";
 import BuilderRail from "./templateBuilder/BuilderRail";
@@ -10,6 +28,22 @@ import OutputPreview from "./templateBuilder/OutputPreview";
 import RawTemplateForm from "./templateBuilder/RawTemplateForm";
 import SavedTemplates from "./templateBuilder/SavedTemplates";
 import BlockOutline from "./templateBuilder/BlockOutline";
+import AdvancedEditorSuite from "./templateBuilder/AdvancedEditorSuite";
+import {
+  cloneStudioBlock,
+  createComponentRegistry,
+  duplicateBlockInDocument,
+  getDocumentStats,
+  insertBlockInDocument,
+  insertBlocksInDocument,
+  interpolateVariables,
+  moveBlockInDocument,
+  removeBlockFromDocument,
+  renderStudioDocument,
+  updateBlockPropsInDocument,
+  updateThemeToken,
+  validateStudioDocument
+} from "../lib/templateStudio";
 
 const initialTemplate = {
   name: "Builder Demo Template",
@@ -80,6 +114,11 @@ const starterSource = {
       }
     }
   ]
+};
+
+const emptyBuilderSource = {
+  ...starterSource,
+  blocks: []
 };
 
 const predefinedTemplates = [
@@ -702,6 +741,17 @@ const blockPresets = {
       textSize: 16
     }
   },
+  textSection: {
+    type: "text",
+    props: {
+      text: "Write your text here.",
+      align: "left",
+      fontSize: 16,
+      fontWeight: "400",
+      lineHeight: "1.5",
+      color: "#475569"
+    }
+  },
   offer: {
     type: "card",
     props: {
@@ -957,6 +1007,11 @@ const inputClass = "w-full rounded-md border border-slate-300 px-3 py-2 text-sm 
 
 const builderSections = [
   {
+    id: "edit",
+    label: "Edit",
+    hint: "Selected"
+  },
+  {
     id: "style",
     label: "Style",
     hint: "Theme"
@@ -1021,48 +1076,19 @@ const defaultImageGallery = [
   }
 ];
 
-const cloneBlock = (block, fallbackType = "block") => ({
-  ...block,
-  id: `${block?.type || fallbackType}-${Date.now()}`,
-  props: {
-    ...(block?.props || {})
-  }
-});
+const cloneBlock = cloneStudioBlock;
 
 const replaceSampleValues = (html = "") => {
-  const sample = {
-    email: "demo@example.com",
-    trackingId: "preview-tracking-id",
-    campaignName: "startup-loan",
-    campaignType: "Loan",
-    subject: "Preview subject",
-    unsubscribeUrl: "#unsubscribe",
-    formHtmlUrl: "https://example.com/hosted-form",
-    directFormHtmlUrl: "https://example.com/hosted-form",
-    formAmpUrl: "https://example.com/amp-form-submit",
-    formActionUrl: "https://example.com/form-submit",
-    baseUrl: "http://localhost:5000",
-    templateId: "preview-template-id",
-    templateSlug: "preview-template",
-    preheader: "Preview"
-  };
-
-  const replaced = Object.entries(sample).reduce((next, [key, value]) => {
-    return next.replace(new RegExp(`{{\\s*${key}\\s*}}`, "g"), value);
-  }, html);
-
-  return replaced.replace(/{{\s*([a-zA-Z0-9_.-]+)\s*}}/g, (_, key) => {
-    return `[${key}]`;
-  });
+  return interpolateVariables(html);
 };
 
 const TemplateForm = () => {
   const [mode, setMode] = useState("builder");
   const [template, setTemplate] = useState(initialTemplate);
   const [rawTemplate, setRawTemplate] = useState(emptyRawTemplate);
-  const [sourceJson, setSourceJson] = useState(starterSource);
-  const [jsonText, setJsonText] = useState(JSON.stringify(starterSource, null, 2));
-  const [selectedBlockId, setSelectedBlockId] = useState(starterSource.blocks[0]?.id);
+  const [sourceJson, setSourceJson] = useState(emptyBuilderSource);
+  const [jsonText, setJsonText] = useState(JSON.stringify(emptyBuilderSource, null, 2));
+  const [selectedBlockId, setSelectedBlockId] = useState("");
   const [preview, setPreview] = useState({
     html: "",
     amp: "",
@@ -1070,6 +1096,13 @@ const TemplateForm = () => {
   });
   const [previewTab, setPreviewTab] = useState("html");
   const [workspaceTab, setWorkspaceTab] = useState("canvas");
+  const [canvasPreviewMode, setCanvasPreviewMode] = useState("design");
+  const [fullPreviewOpen, setFullPreviewOpen] = useState(false);
+  const [fullPreviewMode, setFullPreviewMode] = useState("html");
+  const [draftSavedAt, setDraftSavedAt] = useState("");
+  const [templateStatusMenu, setTemplateStatusMenu] = useState("");
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [saveIntent, setSaveIntent] = useState("published");
   const [previewViewport, setPreviewViewport] = useState("desktop");
   const [sideBySidePreview, setSideBySidePreview] = useState(false);
   const [templates, setTemplates] = useState([]);
@@ -1078,8 +1111,7 @@ const TemplateForm = () => {
   const [catalogBlocks, setCatalogBlocks] = useState([]);
   const [savedBlocks, setSavedBlocks] = useState([]);
   const [editorConfig, setEditorConfig] = useState(null);
-  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
-  const [builderSection, setBuilderSection] = useState("layouts");
+  const [builderSection, setBuilderSection] = useState("style");
   const [loading, setLoading] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState("");
@@ -1094,19 +1126,28 @@ const TemplateForm = () => {
     return sourceJson.blocks?.find((block) => block.id === selectedBlockId);
   }, [selectedBlockId, sourceJson.blocks]);
 
-  const dynamicBlockPresets = useMemo(() => {
-    const backendPresets = Object.fromEntries(
-      catalogBlocks.map((item) => [
-        item.type,
-        item.block
-      ])
-    );
+  const templateStatusGroups = useMemo(() => ({
+    draft: templates.filter((item) => (item.status || "draft") === "draft"),
+    published: templates.filter((item) => item.status === "published")
+  }), [templates]);
 
-    return {
-      ...blockPresets,
-      ...backendPresets
-    };
+  const componentRegistry = useMemo(() => {
+    const registry = createComponentRegistry({
+      presets: blockPresets,
+      groups: componentGroups,
+      labels: componentLabels,
+      descriptions: componentDescriptions
+    });
+
+    registry.extend(catalogBlocks);
+    return registry;
   }, [catalogBlocks]);
+
+  const dynamicBlockPresets = useMemo(() => {
+    return Object.fromEntries(
+      componentRegistry.listTypes().map((type) => [type, componentRegistry.get(type)])
+    );
+  }, [componentRegistry]);
 
   const dynamicComponentGroups = useMemo(() => {
     if (!catalogBlocks.length) {
@@ -1132,51 +1173,94 @@ const TemplateForm = () => {
 
   const dynamicComponentLabels = useMemo(() => ({
     ...componentLabels,
-    ...Object.fromEntries(catalogBlocks.map((item) => [item.type, item.label || item.type]))
-  }), [catalogBlocks]);
+    ...Object.fromEntries(
+      componentRegistry.listTypes().map((type) => [type, componentRegistry.getLabel(type)])
+    )
+  }), [componentRegistry]);
 
+  const liveCanvasPreview = useMemo(() => renderStudioDocument({
+    ...sourceJson,
+    name: template.name,
+    subject: template.subject
+  }), [sourceJson, template.name, template.subject]);
+  const liveCanvasMarkup = liveCanvasPreview?.[canvasPreviewMode] || liveCanvasPreview.html || "";
+  const renderedLiveCanvasMarkup = replaceSampleValues(liveCanvasMarkup);
   const previewMarkup = preview?.[previewTab] || "";
   const renderedPreviewMarkup = replaceSampleValues(previewMarkup);
+  const localValidation = useMemo(() => validateStudioDocument(sourceJson), [sourceJson]);
   const templateStats = useMemo(() => {
-    const blocks = sourceJson.blocks || [];
-    const interactiveTypes = new Set([
-      "form",
-      "poll",
-      "survey",
-      "rating",
-      "nps",
-      "appointment",
-      "booking",
-      "quiz",
-      "productFeedback",
-      "rsvp"
-    ]);
+    const remoteStats = getDocumentStats(sourceJson, previewValidation);
 
     return {
-      blocks: blocks.length,
-      interactive: blocks.filter((block) => interactiveTypes.has(block.type)).length,
-      variables: previewValidation?.warnings
-        ?.find((issue) => issue.code === "MISSING_VARIABLE_VALUES")
-        ?.variables?.length || 0,
-      errors: previewValidation?.errors?.length || 0,
-      warnings: previewValidation?.warnings?.length || 0
+      ...remoteStats,
+      localErrors: localValidation.errors.length,
+      localWarnings: localValidation.warnings.length
     };
-  }, [sourceJson.blocks, previewValidation]);
-  const builderPayload = () => ({
+  }, [sourceJson, previewValidation, localValidation]);
+  const builderPayload = (statusOverride = "") => ({
     name: template.name,
     slug: template.slug,
     subject: template.subject,
-    status: template.status || "draft",
+    status: statusOverride || template.status || "draft",
     sourceJson: {
       ...sourceJson,
       name: template.name,
       subject: template.subject
     }
   });
-  const rawPayload = () => ({
+  const rawPayload = (statusOverride = "") => ({
     ...rawTemplate,
-    status: rawTemplate.status || "draft"
+    status: statusOverride || rawTemplate.status || "draft"
   });
+
+  const saveDraftSnapshot = () => {
+    const draftPayload = mode === "builder"
+      ? {
+          mode: "builder",
+          template: {
+            ...template,
+            status: "draft"
+          },
+          sourceJson: builderPayload().sourceJson
+        }
+      : {
+          mode: "raw",
+          rawTemplate: {
+            ...rawTemplate,
+            status: "draft"
+          }
+        };
+
+    localStorage.setItem("template-studio:auto-draft", JSON.stringify({
+      ...draftPayload,
+      savedAt: new Date().toISOString()
+    }));
+    setDraftSavedAt(new Date().toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit"
+    }));
+  };
+
+  const openSaveDialog = (status = "published") => {
+    setSaveIntent(status);
+    if (mode === "builder") {
+      setTemplate((current) => ({
+        ...current,
+        status
+      }));
+    } else {
+      setRawTemplate((current) => ({
+        ...current,
+        status
+      }));
+    }
+    setSaveDialogOpen(true);
+  };
+
+  const saveDraftNow = () => {
+    saveDraftSnapshot();
+    openSaveDialog("draft");
+  };
 
   const fetchTemplates = async () => {
     try {
@@ -1266,27 +1350,14 @@ const TemplateForm = () => {
   };
 
   const duplicateBlock = (blockId) => {
-    const index = sourceJson.blocks.findIndex((block) => block.id === blockId);
+    const result = duplicateBlockInDocument(sourceJson, blockId);
 
-    if (index < 0) {
+    if (!result.block) {
       return;
     }
 
-    const duplicate = {
-      ...sourceJson.blocks[index],
-      id: `${sourceJson.blocks[index].type}-${Date.now()}`,
-      props: {
-        ...(sourceJson.blocks[index].props || {})
-      }
-    };
-    const nextBlocks = [...sourceJson.blocks];
-
-    nextBlocks.splice(index + 1, 0, duplicate);
-    syncJson({
-      ...sourceJson,
-      blocks: nextBlocks
-    });
-    setSelectedBlockId(duplicate.id);
+    syncJson(result.document);
+    selectBlockForEditing(result.block.id);
   };
 
   const copyBlock = (blockId) => {
@@ -1307,19 +1378,13 @@ const TemplateForm = () => {
       return;
     }
 
-    const pasted = {
-      ...clipboardBlock,
-      id: `${clipboardBlock.type}-${Date.now()}`,
-      props: {
-        ...(clipboardBlock.props || {})
-      }
-    };
+    const pasted = cloneBlock(clipboardBlock, clipboardBlock.type);
 
     syncJson({
       ...sourceJson,
       blocks: [...sourceJson.blocks, pasted]
     });
-    setSelectedBlockId(pasted.id);
+    selectBlockForEditing(pasted.id);
   };
 
   const updateTemplateField = (event) => {
@@ -1337,30 +1402,18 @@ const TemplateForm = () => {
   };
 
   const updateTheme = (key, value) => {
-    syncJson({
-      ...sourceJson,
-      theme: {
-        ...sourceJson.theme,
-        [key]: value
-      }
-    });
+    syncJson(updateThemeToken(sourceJson, key, value));
   };
 
   const updateBlockProps = (blockId, patch) => {
-    syncJson({
-      ...sourceJson,
-      blocks: sourceJson.blocks.map((block) => (
-        block.id === blockId
-          ? {
-              ...block,
-              props: {
-                ...block.props,
-                ...patch
-              }
-            }
-          : block
-      ))
-    });
+    syncJson(updateBlockPropsInDocument(sourceJson, blockId, patch));
+  };
+
+  const selectBlockForEditing = (blockId) => {
+    setSelectedBlockId(blockId);
+    if (blockId) {
+      setBuilderSection("edit");
+    }
   };
 
   const addBlock = (type) => {
@@ -1370,13 +1423,10 @@ const TemplateForm = () => {
       return;
     }
 
-    const block = cloneBlock(preset, type);
+    const result = insertBlockInDocument(sourceJson, preset);
 
-    syncJson({
-      ...sourceJson,
-      blocks: [...(sourceJson.blocks || []), block]
-    });
-    setSelectedBlockId(block.id);
+    syncJson(result.document);
+    selectBlockForEditing(result.block.id);
   };
 
   const insertBlock = (type, index) => {
@@ -1386,35 +1436,21 @@ const TemplateForm = () => {
       return;
     }
 
-    const block = cloneBlock(preset, type);
-    const nextBlocks = [...(sourceJson.blocks || [])];
-    const targetIndex = Math.max(0, Math.min(index, nextBlocks.length));
+    const result = insertBlockInDocument(sourceJson, preset, index);
 
-    nextBlocks.splice(targetIndex, 0, block);
-    syncJson({
-      ...sourceJson,
-      blocks: nextBlocks
-    });
-    setSelectedBlockId(block.id);
+    syncJson(result.document);
+    selectBlockForEditing(result.block.id);
   };
 
   const moveBlockToIndex = (blockId, index) => {
-    const currentIndex = sourceJson.blocks.findIndex((block) => block.id === blockId);
+    const result = moveBlockInDocument(sourceJson, blockId, index);
 
-    if (currentIndex < 0) {
+    if (!result.block) {
       return;
     }
 
-    const nextBlocks = [...sourceJson.blocks];
-    const [block] = nextBlocks.splice(currentIndex, 1);
-    const targetIndex = Math.max(0, Math.min(index, nextBlocks.length));
-
-    nextBlocks.splice(targetIndex, 0, block);
-    syncJson({
-      ...sourceJson,
-      blocks: nextBlocks
-    });
-    setSelectedBlockId(block.id);
+    syncJson(result.document);
+    selectBlockForEditing(result.block.id);
   };
 
   const insertBlocksAtIndex = (blocks = [], index = sourceJson.blocks.length) => {
@@ -1422,16 +1458,10 @@ const TemplateForm = () => {
       return;
     }
 
-    const clonedBlocks = blocks.map((block) => cloneBlock(block, block.type));
-    const nextBlocks = [...(sourceJson.blocks || [])];
-    const targetIndex = Math.max(0, Math.min(index, nextBlocks.length));
+    const result = insertBlocksInDocument(sourceJson, blocks, index);
 
-    nextBlocks.splice(targetIndex, 0, ...clonedBlocks);
-    syncJson({
-      ...sourceJson,
-      blocks: nextBlocks
-    });
-    setSelectedBlockId(clonedBlocks[0]?.id || "");
+    syncJson(result.document);
+    selectBlockForEditing(result.blocks[0]?.id || "");
   };
 
   const handleBuilderDrop = (event, index) => {
@@ -1452,16 +1482,10 @@ const TemplateForm = () => {
       const savedBlock = savedBlocks.find((item) => item._id === savedBlockId);
 
       if (savedBlock) {
-        const nextBlocks = [...(sourceJson.blocks || [])];
-        const block = cloneBlock(savedBlock.block, savedBlock.type);
-        const targetIndex = Math.max(0, Math.min(index, nextBlocks.length));
+        const result = insertBlockInDocument(sourceJson, savedBlock.block, index);
 
-        nextBlocks.splice(targetIndex, 0, block);
-        syncJson({
-          ...sourceJson,
-          blocks: nextBlocks
-        });
-        setSelectedBlockId(block.id);
+        syncJson(result.document);
+        selectBlockForEditing(result.block.id);
       }
 
       return;
@@ -1495,13 +1519,10 @@ const TemplateForm = () => {
   };
 
   const removeBlock = (blockId) => {
-    const nextBlocks = sourceJson.blocks.filter((block) => block.id !== blockId);
+    const result = removeBlockFromDocument(sourceJson, blockId);
 
-    syncJson({
-      ...sourceJson,
-      blocks: nextBlocks
-    });
-    setSelectedBlockId(nextBlocks[0]?.id || "");
+    syncJson(result.document);
+    setSelectedBlockId(result.nextSelectedId);
   };
 
   const moveBlock = (blockId, direction) => {
@@ -1512,14 +1533,9 @@ const TemplateForm = () => {
       return;
     }
 
-    const nextBlocks = [...sourceJson.blocks];
-    const [block] = nextBlocks.splice(index, 1);
-    nextBlocks.splice(nextIndex, 0, block);
+    const result = moveBlockInDocument(sourceJson, blockId, nextIndex);
 
-    syncJson({
-      ...sourceJson,
-      blocks: nextBlocks
-    });
+    syncJson(result.document);
   };
 
   const updateFormField = (fieldIndex, patch) => {
@@ -1578,6 +1594,13 @@ const TemplateForm = () => {
   };
 
   const previewBuilder = async ({ silent = false } = {}) => {
+    const previewSource = {
+      ...sourceJson,
+      name: template.name,
+      subject: template.subject
+    };
+    const localRendered = renderStudioDocument(previewSource);
+
     try {
       setPreviewError("");
       if (silent) {
@@ -1586,24 +1609,22 @@ const TemplateForm = () => {
         setLoading(true);
       }
 
+      setPreview(localRendered);
+      setPreviewTab("html");
+
       const response = await axios.post(apiUrl("/api/templates/builder/preview"), {
-        sourceJson: {
-          ...sourceJson,
-          name: template.name,
-          subject: template.subject
-        }
+        sourceJson: previewSource
       });
 
-      setPreview(response.data.rendered || response.data.compiled);
       setPreviewValidation(response.data.validation || null);
-      setPreviewTab("html");
     } catch (error) {
       console.log(error);
-      const message = error.response?.data?.message || "Preview failed. Check backend is running.";
+      const message = error.response?.data?.message || "Backend validation unavailable. Showing local canvas preview.";
+      setPreview(localRendered);
       setPreviewError(message);
       setPreviewValidation(error.response?.data?.validation || null);
 
-      if (!silent) {
+      if (!silent && error.response?.data?.message) {
         alert(message);
       }
     } finally {
@@ -1709,16 +1730,24 @@ const TemplateForm = () => {
     return () => clearTimeout(timer);
   }, [mode, sourceJson, template.name, template.subject]);
 
-  const saveTemplate = async (event) => {
-    event.preventDefault();
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      saveDraftSnapshot();
+    }, 900);
+
+    return () => clearTimeout(timer);
+  }, [mode, sourceJson, template, rawTemplate]);
+
+  const saveTemplate = async (event, statusOverride = saveIntent) => {
+    event?.preventDefault?.();
 
     try {
       setLoading(true);
 
       const validation = await validateCurrentTemplate({ silent: true });
       const nextStatus = mode === "builder"
-        ? template.status || "draft"
-        : rawTemplate.status || "draft";
+        ? statusOverride || template.status || "draft"
+        : statusOverride || rawTemplate.status || "draft";
 
       if (nextStatus === "published" && validation && !validation.valid) {
         alert("Fix validation errors before publishing this template.");
@@ -1727,7 +1756,7 @@ const TemplateForm = () => {
 
       if (mode === "builder") {
         const response = await axios.post(apiUrl("/api/templates"), {
-          ...builderPayload(),
+          ...builderPayload(nextStatus),
           isActive: true
         });
 
@@ -1741,7 +1770,7 @@ const TemplateForm = () => {
         });
         await fetchVersions(response.data.template?._id);
       } else {
-        const response = await axios.post(apiUrl("/api/templates"), rawPayload());
+        const response = await axios.post(apiUrl("/api/templates"), rawPayload(nextStatus));
         setPreviewValidation(response.data.validation || validation || null);
         setPreview({
           html: response.data.template?.html || "",
@@ -1751,7 +1780,13 @@ const TemplateForm = () => {
         });
       }
 
-      alert("Template saved successfully");
+      if (mode === "builder") {
+        setTemplate((current) => ({ ...current, status: nextStatus }));
+      } else {
+        setRawTemplate((current) => ({ ...current, status: nextStatus }));
+      }
+      setSaveDialogOpen(false);
+      alert(nextStatus === "draft" ? "Draft saved successfully" : "Template saved successfully");
       await fetchTemplates();
       window.dispatchEvent(new Event("templates:changed"));
     } catch (error) {
@@ -1765,8 +1800,8 @@ const TemplateForm = () => {
 
   const loadStarter = () => {
     setTemplate(initialTemplate);
-    syncJson(starterSource);
-    setSelectedBlockId(starterSource.blocks[0]?.id);
+    syncJson(emptyBuilderSource);
+    setSelectedBlockId("");
     setPreview(null);
     setMode("builder");
     setActiveTemplateId("");
@@ -1841,6 +1876,24 @@ const TemplateForm = () => {
     setSelectedBlockId(block.id);
   };
 
+  const addImageBlockFromComposer = (imageDataUrl) => {
+    const imageBlock = {
+      type: "image",
+      props: {
+        src: imageDataUrl,
+        alt: "Composed campaign creative",
+        width: sourceJson.theme?.width || 600,
+        height: "auto",
+        href: "{{formHtmlUrl}}"
+      }
+    };
+    const result = insertBlockInDocument(sourceJson, imageBlock);
+
+    syncJson(result.document);
+    selectBlockForEditing(result.block.id);
+    setWorkspaceTab("canvas");
+  };
+
   const saveSelectedBlock = async () => {
     if (!selectedBlock) {
       return;
@@ -1882,71 +1935,101 @@ const TemplateForm = () => {
     setMode("raw");
   };
 
-  return (
-    <section className="w-full max-w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-200 bg-white px-4 py-3">
-        <div className="flex min-w-0 flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex min-w-0 flex-wrap items-center gap-3">
-            <div className="min-w-0">
-              <h2 className="text-lg font-bold text-slate-900">Template Studio</h2>
-              <p className="text-xs text-slate-500">Build, validate, preview, and save interactive email templates.</p>
-            </div>
-            <div className="inline-flex max-w-full overflow-x-auto rounded-lg border border-slate-300 bg-slate-50 p-1">
-              {["builder", "raw"].map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  onClick={() => setMode(item)}
-                  className={`rounded-md px-3 py-2 text-sm font-semibold capitalize ${
-                    mode === item
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-600 hover:bg-white"
-                  }`}
-                >
-                  {item === "raw" ? "Raw HTML" : "Builder"}
-                </button>
-              ))}
-            </div>
-          </div>
+  if (fullPreviewOpen) {
+    return (
+      <TemplatePreviewWorkspace
+        mode={fullPreviewMode}
+        setMode={setFullPreviewMode}
+        preview={liveCanvasPreview}
+        onBack={() => setFullPreviewOpen(false)}
+      />
+    );
+  }
 
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <StudioPill label="Blocks" value={templateStats.blocks} />
-            <StudioPill label="Issues" value={`${templateStats.errors}/${templateStats.warnings}`} tone={templateStats.errors ? "danger" : templateStats.warnings ? "warn" : "default"} />
-            <button
-              type="button"
-              onClick={loadStarter}
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              Starter
-            </button>
-            <button
-              type="button"
-              onClick={loadRawExample}
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              Raw Example
-            </button>
-          </div>
+  return (
+    <section className="w-full max-w-full overflow-hidden border border-[#dde5f0] bg-white shadow-sm">
+      <div className="grid min-h-14 grid-cols-[minmax(260px,320px)_1fr_minmax(360px,auto)] border-b border-[#dde5f0] bg-white">
+        <div className="flex min-w-0 items-center gap-3 border-r border-[#dde5f0] px-4">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#6c4cff] to-[#20c997] text-sm font-black text-white">A</span>
+          <span className="min-w-0 truncate text-sm font-medium text-slate-600">{template.name || "Template"} - 25-05-2026 ...</span>
+          <Edit3 size={15} className="shrink-0 text-slate-700" />
+        </div>
+        <div className="flex items-center justify-center gap-2 border-r border-[#dde5f0] px-3">
+          <button
+            type="button"
+            onClick={() => setPreviewViewport(previewViewport === "desktop" ? "mobile" : "desktop")}
+            className="inline-flex items-center gap-2 rounded-md border border-[#dde5f0] bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            <Monitor size={16} />
+            {previewViewport === "mobile" ? "Mobile" : "Desktop"}
+            <ChevronDown size={16} />
+          </button>
+          <TemplateStatusMenu
+            openStatus={templateStatusMenu}
+            setOpenStatus={setTemplateStatusMenu}
+            groups={templateStatusGroups}
+            activeTemplateId={activeTemplateId}
+            loadSavedTemplate={loadSavedTemplate}
+          />
+          <CanvasViewSwitch value={canvasPreviewMode} onChange={setCanvasPreviewMode} />
+        </div>
+        <div className="flex items-center justify-end gap-2 px-3">
+          <button type="button" onClick={loadStarter} className="rounded-md p-2 text-slate-600 hover:bg-slate-50" title="New blank template">
+            <FilePlus2 size={19} />
+          </button>
+          <button type="button" className="rounded-md p-2 text-slate-600 hover:bg-slate-50" title="Share">
+            <Share2 size={18} />
+          </button>
+          <button type="button" onClick={() => setFullPreviewOpen(true)} className="rounded-md border border-[#dde5f0] bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            Preview
+          </button>
+          <button type="button" onClick={saveDraftNow} className="rounded-md border border-[#dde5f0] bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            Draft
+          </button>
+          {draftSavedAt && (
+            <span className="hidden text-xs font-medium text-slate-500 xl:inline">
+              Auto saved {draftSavedAt}
+            </span>
+          )}
+          <button type="button" onClick={() => openSaveDialog("published")} disabled={loading} className="rounded-md bg-[#f2efff] px-5 py-2 text-sm font-semibold text-[#6c4cff] hover:bg-[#e8e2ff] disabled:opacity-50">
+            Save
+          </button>
         </div>
       </div>
 
-      <form onSubmit={saveTemplate} className="min-w-0 space-y-4 p-3 sm:p-4">
+      {saveDialogOpen && (
+        <SaveTemplateDialog
+          mode={mode}
+          loading={loading}
+          status={saveIntent}
+          template={mode === "builder" ? template : rawTemplate}
+          updateTemplateField={mode === "builder" ? updateTemplateField : updateRawField}
+          setStatus={(status) => {
+            setSaveIntent(status);
+            if (mode === "builder") {
+              setTemplate((current) => ({ ...current, status }));
+            } else {
+              setRawTemplate((current) => ({ ...current, status }));
+            }
+          }}
+          onClose={() => setSaveDialogOpen(false)}
+          onSubmit={(event) => saveTemplate(event, saveIntent)}
+        />
+      )}
+
+      <form onSubmit={(event) => {
+        event.preventDefault();
+        openSaveDialog("published");
+      }} className="min-w-0">
         {mode === "builder" ? (
           <>
-            <div
-              className={`grid min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-white xl:h-[82vh] xl:min-h-[680px] ${
-                leftPanelCollapsed
-                  ? "xl:grid-cols-[minmax(0,1fr)_360px]"
-                  : "xl:grid-cols-[430px_minmax(0,1fr)_360px]"
-              }`}
-            >
-              {!leftPanelCollapsed && (
-              <aside className="grid min-w-0 grid-cols-[88px_minmax(0,1fr)] border-b border-slate-200 bg-white xl:border-b-0 xl:border-r">
+            <div className="grid min-w-0 overflow-hidden bg-white xl:h-[calc(100vh-57px)] xl:grid-cols-[390px_minmax(0,1fr)] 2xl:grid-cols-[430px_minmax(0,1fr)]">
+              <aside className="sticky top-0 z-20 grid min-w-0 grid-cols-[80px_minmax(0,1fr)] self-start border-b border-slate-200 bg-white xl:h-[calc(100vh-57px)] xl:border-b-0 xl:border-r">
                 <BuilderRail
                   sections={builderSections}
                   activeSection={builderSection}
                   setActiveSection={setBuilderSection}
-                  collapse={() => setLeftPanelCollapsed(true)}
+                  collapse={() => setBuilderSection("components")}
                 />
                 <BuilderSidePanel
                   activeSection={builderSection}
@@ -1968,115 +2051,8 @@ const TemplateForm = () => {
                   restoreVersion={restoreVersion}
                   blocks={sourceJson.blocks}
                   selectedBlockId={selectedBlockId}
-                  setSelectedBlockId={setSelectedBlockId}
+                  setSelectedBlockId={selectBlockForEditing}
                   handleBuilderDrop={handleBuilderDrop}
-                  loadTemplate={(item) => {
-                    setTemplate({
-                      name: item.name,
-                      slug: item.slug,
-                      subject: item.subject,
-                      status: template.status || "draft"
-                    });
-                    syncJson(item.sourceJson);
-                    setSelectedBlockId(item.sourceJson.blocks?.[0]?.id || "");
-                    setMode("builder");
-                  }}
-                />
-              </aside>
-              )}
-
-              <main className="min-w-0 space-y-4 bg-slate-100 p-3 sm:p-5">
-                {leftPanelCollapsed && (
-                  <button
-                    type="button"
-                    onClick={() => setLeftPanelCollapsed(false)}
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50"
-                  >
-                    Show Builder Panel
-                  </button>
-                )}
-                <div className="rounded-lg border border-slate-200 bg-white p-2 shadow-sm sm:p-3">
-                <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <div className="inline-flex max-w-full overflow-x-auto rounded-md border border-slate-200 bg-slate-50 p-1">
-                      {["canvas", "preview"].map((tab) => (
-                        <button
-                          key={tab}
-                          type="button"
-                          onClick={() => setWorkspaceTab(tab)}
-                          className={`rounded-md px-3 py-2 text-xs font-bold capitalize ${
-                            workspaceTab === tab
-                              ? "bg-slate-900 text-white"
-                              : "text-slate-600 hover:bg-white"
-                          }`}
-                        >
-                          {tab}
-                        </button>
-                      ))}
-                    </div>
-                    <select
-                      value={previewViewport}
-                      onChange={(event) => setPreviewViewport(event.target.value)}
-                      className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700"
-                    >
-                      <option value="desktop">Desktop</option>
-                      <option value="mobile">Mobile</option>
-                    </select>
-                  </div>
-                  <div className="flex min-w-0 flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={previewBuilder}
-                    disabled={loading}
-                    className="rounded-md border border-indigo-100 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
-                  >
-                    {loading ? "Generating..." : "Preview"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => validateCurrentTemplate()}
-                    disabled={previewLoading}
-                    className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                  >
-                    {previewLoading ? "Checking..." : "Validate"}
-                  </button>
-                  </div>
-                </div>
-                <ValidationSummary validation={previewValidation} />
-                </div>
-
-                <div className="min-w-0 min-h-[420px] overflow-visible xl:h-[calc(78vh-150px)] xl:min-h-[470px] xl:overflow-y-auto xl:pr-1">
-                  {workspaceTab === "canvas" ? (
-                    <EmailCanvas
-                      sourceJson={sourceJson}
-                      selectedBlockId={selectedBlockId}
-                      setSelectedBlockId={setSelectedBlockId}
-                      handleBuilderDrop={handleBuilderDrop}
-                      updateBlockProps={updateBlockProps}
-                      removeBlock={removeBlock}
-                      editorConfig={editorConfig}
-                    />
-                  ) : (
-                    <OutputPreview
-                      previewMarkup={previewMarkup}
-                      renderedPreviewMarkup={renderedPreviewMarkup}
-                      previewTab={previewTab}
-                      setPreviewTab={setPreviewTab}
-                      preview={preview}
-                      previewViewport={previewViewport}
-                      setPreviewViewport={setPreviewViewport}
-                      sideBySidePreview={sideBySidePreview}
-                      setSideBySidePreview={setSideBySidePreview}
-                      previewLoading={previewLoading}
-                      previewError={previewError}
-                      previewValidation={previewValidation}
-                    />
-                  )}
-                </div>
-              </main>
-
-              <aside className="min-w-0 space-y-4 border-t border-slate-200 bg-white p-3 sm:p-4 xl:border-l xl:border-t-0 xl:max-h-[calc(100vh-120px)] xl:overflow-y-auto">
-                <SelectedBlockPanel
                   selectedBlock={selectedBlock}
                   moveBlock={moveBlock}
                   removeBlock={removeBlock}
@@ -2094,15 +2070,53 @@ const TemplateForm = () => {
                   removeFormField={removeFormField}
                   saveSelectedBlock={saveSelectedBlock}
                   editorConfig={editorConfig}
-                />
-
-                <JsonEditor
-                  jsonText={jsonText}
-                  setJsonText={setJsonText}
-                  applyJson={applyJson}
-                  jsonError={jsonError}
+                  loadTemplate={(item) => {
+                    setTemplate({
+                      name: item.name,
+                      slug: item.slug,
+                      subject: item.subject,
+                      status: template.status || "draft"
+                    });
+                    syncJson(item.sourceJson);
+                    selectBlockForEditing(item.sourceJson.blocks?.[0]?.id || "");
+                    setMode("builder");
+                  }}
                 />
               </aside>
+
+              <main className="min-w-0 bg-[#e9eef5]">
+                <div className="min-w-0 min-h-[calc(100vh-57px)] overflow-y-auto p-3 sm:p-5 xl:h-[calc(100vh-57px)]">
+                  {canvasPreviewMode === "design" && (
+                    <EmailCanvas
+                      sourceJson={sourceJson}
+                      selectedBlockId={selectedBlockId}
+                      setSelectedBlockId={selectBlockForEditing}
+                      handleBuilderDrop={handleBuilderDrop}
+                      reorderBlock={moveBlockToIndex}
+                      updateBlockProps={updateBlockProps}
+                      removeBlock={removeBlock}
+                      editorConfig={editorConfig}
+                    />
+                  )}
+
+                  {canvasPreviewMode !== "design" && (
+                    <LiveCanvasPreview
+                      markup={renderedLiveCanvasMarkup}
+                      rawMarkup={liveCanvasMarkup}
+                      mode={canvasPreviewMode}
+                      viewport={previewViewport}
+                    />
+                  )}
+
+                  {workspaceTab === "engines" && (
+                    <AdvancedEditorSuite
+                      sourceJson={sourceJson}
+                      template={template}
+                      addImageBlockFromComposer={addImageBlockFromComposer}
+                    />
+                  )}
+                </div>
+              </main>
             </div>
           </>
         ) : (
@@ -2157,7 +2171,7 @@ const TemplateForm = () => {
           </>
         )}
 
-        <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3">
+        <div className="hidden min-w-0 flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3">
           <VariableChips compact />
           <button
             type="submit"
@@ -2171,6 +2185,86 @@ const TemplateForm = () => {
     </section>
   );
 };
+
+const SaveTemplateDialog = ({
+  mode,
+  loading,
+  status,
+  template,
+  updateTemplateField,
+  setStatus,
+  onClose,
+  onSubmit
+}) => (
+  <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/35 px-4 pt-20">
+    <form onSubmit={onSubmit} className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-4 shadow-2xl">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-base font-black text-slate-950">
+            {status === "draft" ? "Save Draft" : "Save Template"}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            Confirm template details before saving it to your library.
+          </p>
+        </div>
+        <button type="button" onClick={onClose} className="rounded-md px-2 py-1 text-sm font-bold text-slate-500 hover:bg-slate-100">
+          x
+        </button>
+      </div>
+
+      <div className="grid gap-3">
+        <InputField
+          name="name"
+          label="Template Name"
+          value={template.name || ""}
+          onChange={updateTemplateField}
+          placeholder="Eligibility campaign"
+          required
+        />
+        <InputField
+          name="subject"
+          label="Email Subject"
+          value={template.subject || ""}
+          onChange={updateTemplateField}
+          placeholder="Check your eligibility"
+        />
+        <InputField
+          name="slug"
+          label="Slug"
+          value={template.slug || ""}
+          onChange={updateTemplateField}
+          placeholder="eligibility-campaign"
+        />
+        <label className="block">
+          <span className="mb-2 block text-sm font-semibold text-slate-700">Status</span>
+          <select
+            value={status}
+            onChange={(event) => setStatus(event.target.value)}
+            className={inputClass}
+          >
+            <option value="draft">Draft</option>
+            <option value="published">Published</option>
+          </select>
+        </label>
+      </div>
+
+      <div className="mt-4 flex items-center justify-end gap-2 border-t border-slate-100 pt-4">
+        <button type="button" onClick={onClose} className="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+          Cancel
+        </button>
+        <button type="submit" disabled={loading} className="rounded-md bg-[#6c4cff] px-4 py-2 text-sm font-bold text-white hover:bg-[#5b3ded] disabled:opacity-50">
+          {loading ? "Saving..." : status === "draft" ? "Save Draft" : "Save Template"}
+        </button>
+      </div>
+
+      {mode === "builder" && (
+        <p className="mt-3 text-[11px] leading-4 text-slate-400">
+          Drafts stay editable and appear under the Draft templates menu.
+        </p>
+      )}
+    </form>
+  </div>
+);
 
 const InputField = ({ label, ...props }) => (
   <label className="block">
@@ -2271,6 +2365,360 @@ const CompactStatusField = ({ value, onChange }) => (
   </label>
 );
 
+const EmailBodyStylePanel = ({
+  template,
+  updateTemplateField,
+  setTemplate,
+  sourceJson,
+  updateTheme
+}) => {
+  const theme = sourceJson.theme || {};
+  const [activeDevice, setActiveDevice] = useState("desktop");
+  const fontOptions = [
+    "Arial, sans-serif",
+    "Verdana, sans-serif",
+    "Helvetica, Arial, sans-serif",
+    "Georgia, serif",
+    "Tahoma, sans-serif",
+    "Trebuchet MS, sans-serif"
+  ];
+
+  return (
+    <div>
+      <div className="mb-5">
+        <h3 className="text-xl font-bold text-slate-950">Email Body</h3>
+        <div className="mt-7 flex gap-7 border-b border-[#d8e0ea]">
+          {["desktop", "mobile"].map((device) => (
+            <button
+              key={device}
+              type="button"
+              onClick={() => setActiveDevice(device)}
+              className={`pb-3 text-sm capitalize ${
+                activeDevice === device
+                  ? "-mb-px border-b-2 border-[#6c4cff] font-semibold text-[#6c4cff]"
+                  : "font-medium text-[#64748b]"
+              }`}
+            >
+              {device}
+            </button>
+          ))}
+        </div>
+      </div>
+      {activeDevice === "desktop" ? (
+        <DesktopEmailBodyStyle theme={theme} updateTheme={updateTheme} fontOptions={fontOptions} />
+      ) : (
+        <MobileEmailBodyStyle theme={theme} updateTheme={updateTheme} />
+      )}
+    </div>
+  );
+};
+
+const DesktopEmailBodyStyle = ({ theme, updateTheme, fontOptions }) => (
+  <div>
+    <BodyStyleAccordion title="Font">
+      <label className="block">
+        <span className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">Family</span>
+        <select value={theme.fontFamily || "Arial, sans-serif"} onChange={(event) => updateTheme("fontFamily", event.target.value)} className={inputClass}>
+          {fontOptions.map((font) => <option key={font} value={font}>{font.split(",")[0]}</option>)}
+        </select>
+      </label>
+    </BodyStyleAccordion>
+
+    <BodyStyleAccordion title="Color">
+      <div className="grid gap-3">
+        <ColorLine label="Email text color" value={theme.textColor || "#111827"} onChange={(value) => updateTheme("textColor", value)} />
+        <ColorLine label="Page background" value={theme.backgroundColor || "#f8fafc"} onChange={(value) => updateTheme("backgroundColor", value)} />
+        <ColorLine label="Email body color" value={theme.contentColor || "#ffffff"} onChange={(value) => updateTheme("contentColor", value)} />
+        <ColorLine label="Accent color" value={theme.primaryColor || "#0f766e"} onChange={(value) => updateTheme("primaryColor", value)} />
+        <ColorLine label="Muted text color" value={theme.mutedColor || "#64748b"} onChange={(value) => updateTheme("mutedColor", value)} />
+      </div>
+    </BodyStyleAccordion>
+
+    <BodyStyleAccordion title="Text">
+      <div className="grid gap-4">
+        <Stepper label="Paragraph" value={theme.bodyFontSize || 16} onChange={(value) => updateTheme("bodyFontSize", value)} />
+        <Stepper label="Heading" value={theme.headingFontSize || 28} onChange={(value) => updateTheme("headingFontSize", value)} />
+        <InputField label="Line height" value={theme.lineHeight || "1.45"} onChange={(event) => updateTheme("lineHeight", event.target.value)} />
+        <InputField label="Weight" value={theme.fontWeight || "400"} onChange={(event) => updateTheme("fontWeight", event.target.value)} />
+      </div>
+    </BodyStyleAccordion>
+
+    <BodyStyleAccordion title="Button">
+      <div className="grid gap-3">
+        <ButtonPreview label="Primary" color={theme.buttonColor || theme.primaryColor || "#0f766e"} variant="primary" />
+        <ColorLine label="Button color" value={theme.buttonColor || theme.primaryColor || "#0f766e"} onChange={(value) => updateTheme("buttonColor", value)} />
+        <ColorLine label="Button text color" value={theme.buttonTextColor || "#ffffff"} onChange={(value) => updateTheme("buttonTextColor", value)} />
+        <div className="grid grid-cols-2 gap-3">
+          <InputField label="Radius" type="number" value={theme.buttonRadius || 8} onChange={(event) => updateTheme("buttonRadius", Number(event.target.value))} />
+          <InputField label="Font size" type="number" value={theme.buttonFontSize || 16} onChange={(event) => updateTheme("buttonFontSize", Number(event.target.value))} />
+        </div>
+        <InputField label="Padding" value={theme.buttonPadding || "13px 22px"} onChange={(event) => updateTheme("buttonPadding", event.target.value)} />
+      </div>
+    </BodyStyleAccordion>
+
+    <BodyStyleAccordion title="Border">
+      <div className="grid gap-3">
+        <div className="grid grid-cols-2 gap-3">
+          <InputField label="Radius" type="number" value={theme.radius || 0} onChange={(event) => updateTheme("radius", Number(event.target.value))} />
+          <InputField label="Width" type="number" value={theme.borderWidth || 0} onChange={(event) => updateTheme("borderWidth", Number(event.target.value))} />
+        </div>
+        <ColorLine label="Border color" value={theme.borderColor || "#e2e8f0"} onChange={(value) => updateTheme("borderColor", value)} />
+      </div>
+    </BodyStyleAccordion>
+
+    <BodyStyleAccordion title="Padding & Dimension">
+      <div className="grid gap-4">
+        <InputField label="Dimension" type="number" value={theme.width || 600} onChange={(event) => updateTheme("width", Number(event.target.value))} />
+        <InputField label="Block padding" value={theme.blockPadding || "10px 20px"} onChange={(event) => updateTheme("blockPadding", event.target.value)} />
+        <InputField label="Page padding" value={theme.pagePadding || "40px 12px"} onChange={(event) => updateTheme("pagePadding", event.target.value)} />
+        <InputField label="Body padding" value={theme.padding || "20px"} onChange={(event) => updateTheme("padding", event.target.value)} />
+        <PaddingControl theme={theme} updateTheme={updateTheme} />
+      </div>
+    </BodyStyleAccordion>
+  </div>
+);
+
+const MobileEmailBodyStyle = ({ theme, updateTheme }) => (
+  <div>
+    <div className="rounded-md border border-[#d5deea] bg-[#f1f5fa] px-4 py-3 text-sm leading-5 text-slate-800">
+      Setup default text formatting for mobile view.
+    </div>
+    <BodyStyleAccordion title="Text" defaultOpen>
+      <div className="grid gap-4">
+        <Stepper label="Paragraph" value={theme.mobileParagraphFontSize || theme.bodyFontSize || 16} onChange={(value) => updateTheme("mobileParagraphFontSize", value)} />
+        <Stepper label="Heading 1" value={theme.mobileHeading1FontSize || 28} onChange={(value) => updateTheme("mobileHeading1FontSize", value)} />
+        <Stepper label="Heading 2" value={theme.mobileHeading2FontSize || 24} onChange={(value) => updateTheme("mobileHeading2FontSize", value)} />
+        <Stepper label="Heading 3" value={theme.mobileHeading3FontSize || 20} onChange={(value) => updateTheme("mobileHeading3FontSize", value)} />
+        <Stepper label="Heading 4" value={theme.mobileHeading4FontSize || 18} onChange={(value) => updateTheme("mobileHeading4FontSize", value)} />
+      </div>
+    </BodyStyleAccordion>
+    <BodyStyleAccordion title="Padding & Dimension">
+      <div className="grid gap-3">
+        <InputField label="Mobile width" type="number" value={theme.mobileWidth || 390} onChange={(event) => updateTheme("mobileWidth", Number(event.target.value))} />
+        <InputField label="Mobile page padding" value={theme.mobilePadding || "16px 8px"} onChange={(event) => updateTheme("mobilePadding", event.target.value)} />
+      </div>
+    </BodyStyleAccordion>
+  </div>
+);
+
+const BodyStyleAccordion = ({ title, defaultOpen = false, children }) => (
+  <details open={defaultOpen} className="border-b border-[#d8e0ea] py-5">
+    <summary className="flex cursor-pointer list-none items-center justify-between text-base font-bold text-slate-900 [&::-webkit-details-marker]:hidden">
+      {title}
+      <ChevronDown size={18} className="text-slate-900" />
+    </summary>
+    <div className="mt-5">{children}</div>
+  </details>
+);
+
+const Stepper = ({ label, value, onChange }) => {
+  const numericValue = Number(value) || 0;
+  const setValue = (nextValue) => onChange(Math.max(1, Number(nextValue) || 1));
+
+  return (
+    <label className="block">
+      {label && <span className="mb-3 block text-sm font-medium text-slate-800">{label}</span>}
+      <span className="inline-grid h-9 grid-cols-[30px_84px_30px] overflow-hidden rounded border border-[#d5deea] bg-white text-sm text-black">
+        <button type="button" onClick={() => setValue(numericValue - 1)} className="border-r border-[#d5deea] text-lg leading-none">-</button>
+        <input type="number" value={numericValue} onChange={(event) => setValue(event.target.value)} className="w-full text-center outline-none" />
+        <button type="button" onClick={() => setValue(numericValue + 1)} className="border-l border-[#d5deea] text-lg leading-none">+</button>
+      </span>
+    </label>
+  );
+};
+
+const LegacyStepper = ({ value }) => (
+  <div className="inline-grid h-9 grid-cols-[30px_84px_30px] overflow-hidden rounded border border-[#d5deea] bg-white text-sm text-black">
+    <button type="button" className="border-r border-[#d5deea] text-lg leading-none">-</button>
+    <input readOnly value={value} className="w-full text-center outline-none" />
+    <button type="button" className="border-l border-[#d5deea] text-lg leading-none">+</button>
+  </div>
+);
+
+const ColorSwatch = ({ value, onChange }) => (
+  <label className="flex h-8 min-w-28 items-center gap-2 rounded border border-[#d5deea] bg-white px-2">
+    <input type="color" value={value} onChange={(event) => onChange(event.target.value)} className="h-4 w-4 border-0 bg-transparent p-0" />
+    <span className="font-mono text-xs text-slate-700">{value}</span>
+  </label>
+);
+
+const ColorLine = ({ label, value, onChange }) => (
+  <label className="block">
+    <span className="text-xs font-semibold text-[#6c4cff]">{label}</span>
+    <span className="mt-2 flex h-9 items-center gap-2 rounded border border-[#d5deea] bg-white px-2">
+      <input type="color" value={value} onChange={(event) => onChange(event.target.value)} className="h-4 w-4 border-0 bg-transparent p-0" />
+      <span className="font-mono text-xs text-slate-700">{value}</span>
+    </span>
+  </label>
+);
+
+const ButtonPreview = ({ label, color, variant }) => (
+  <div>
+    <p className="mb-2 text-xs font-semibold text-slate-500">{label}</p>
+    <button
+      type="button"
+      className="flex h-12 w-full items-center justify-between rounded border border-[#d5deea] bg-white px-4 text-left"
+    >
+      <span
+        className={`rounded-full px-4 py-2 text-xs font-bold ${
+          variant === "tertiary" ? "border bg-white" : "text-white"
+        }`}
+        style={{
+          backgroundColor: variant === "tertiary" ? "#ffffff" : color,
+          borderColor: color,
+          color: variant === "tertiary" ? color : "#ffffff"
+        }}
+      >
+        Button text
+      </span>
+      <ChevronDown size={16} className="-rotate-90 text-slate-400" />
+    </button>
+  </div>
+);
+
+const PaddingControl = ({ theme, updateTheme }) => (
+  <div className="mx-auto grid w-32 grid-cols-3 grid-rows-3 items-center justify-items-center text-xs text-slate-500">
+    <div />
+    <input type="number" value={theme.paddingTop ?? 0} onChange={(event) => updateTheme("paddingTop", Number(event.target.value))} className="h-8 w-10 rounded border border-[#d5deea] text-center" />
+    <div />
+    <input type="number" value={theme.paddingLeft ?? 0} onChange={(event) => updateTheme("paddingLeft", Number(event.target.value))} className="h-8 w-10 rounded border border-[#d5deea] text-center" />
+    <input type="number" value={theme.contentPadding ?? 20} onChange={(event) => updateTheme("contentPadding", Number(event.target.value))} className="h-8 w-10 rounded border border-[#d5deea] text-center" />
+    <input type="number" value={theme.paddingRight ?? 0} onChange={(event) => updateTheme("paddingRight", Number(event.target.value))} className="h-8 w-10 rounded border border-[#d5deea] text-center" />
+    <div />
+    <input type="number" value={theme.paddingBottom ?? 0} onChange={(event) => updateTheme("paddingBottom", Number(event.target.value))} className="h-8 w-10 rounded border border-[#d5deea] text-center" />
+    <div />
+  </div>
+);
+
+const ColorInput = ({ label, value, onChange }) => (
+  <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
+    {label}
+    <span className="mt-2 flex items-center gap-2 rounded-md border border-slate-200 bg-white px-2 py-2">
+      <input type="color" value={value} onChange={(event) => onChange(event.target.value)} className="h-7 w-8 rounded border border-slate-200" />
+      <span className="font-mono text-xs normal-case text-slate-600">{value}</span>
+    </span>
+  </label>
+);
+
+const FloatingBlockLibrary = ({
+  builderSection,
+  setBuilderSection,
+  componentGroups,
+  componentLabels,
+  addBlock,
+  templates,
+  loadSavedTemplate,
+  predefinedTemplates,
+  loadTemplate
+}) => {
+  const activeGroup = componentGroups.find((group) => group.title.toLowerCase() === builderSection) || componentGroups[0];
+
+  return (
+    <div className="absolute left-0 top-12 z-50 w-[min(92vw,520px)] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.22)]">
+      <div className="border-b border-slate-100 bg-slate-950 px-4 py-3 text-white">
+        <p className="text-xs font-black uppercase tracking-[0.2em] text-emerald-200">Block Library</p>
+        <p className="mt-1 text-sm font-bold text-slate-200">Add content without shrinking the canvas.</p>
+      </div>
+
+      <div className="grid max-h-[620px] min-h-[420px] grid-cols-[132px_minmax(0,1fr)] overflow-hidden">
+        <nav className="premium-scrollbar overflow-y-auto border-r border-slate-100 bg-slate-50 p-2">
+          {componentGroups.map((group) => {
+            const id = group.title.toLowerCase();
+            return (
+              <button
+                key={group.title}
+                type="button"
+                onClick={() => setBuilderSection(id)}
+                className={`mb-1 w-full rounded-md px-3 py-2 text-left text-xs font-black transition ${
+                  (activeGroup?.title || "").toLowerCase() === id
+                    ? "bg-white text-[#0f766e] shadow-sm"
+                    : "text-slate-600 hover:bg-white"
+                }`}
+              >
+                {group.title}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => setBuilderSection("templates")}
+            className={`mb-1 w-full rounded-md px-3 py-2 text-left text-xs font-black transition ${
+              builderSection === "templates"
+                ? "bg-white text-[#0f766e] shadow-sm"
+                : "text-slate-600 hover:bg-white"
+            }`}
+          >
+            Templates
+          </button>
+        </nav>
+
+        <div className="premium-scrollbar overflow-y-auto p-3">
+          {builderSection !== "templates" ? (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {(activeGroup?.items || []).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => addBlock(type)}
+                  draggable
+                  onDragStart={(event) => {
+                    event.dataTransfer.setData("component/type", type);
+                    event.dataTransfer.effectAllowed = "copy";
+                  }}
+                  className="group rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[#0f766e] hover:shadow-md"
+                >
+                  <span className="flex h-9 w-9 items-center justify-center rounded-md bg-emerald-50 text-xs font-black text-[#0f766e]">
+                    {(componentLabels[type] || type).slice(0, 2)}
+                  </span>
+                  <span className="mt-3 block text-sm font-black text-slate-950">{componentLabels[type] || type}</span>
+                  <span className="mt-1 block text-xs font-semibold text-slate-500">Click or drag to canvas</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <p className="mb-2 text-xs font-black uppercase tracking-wide text-slate-500">Prebuilt</p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {predefinedTemplates.map((item) => (
+                    <button
+                      key={item.slug}
+                      type="button"
+                      onClick={() => loadTemplate(item)}
+                      className="rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm hover:border-[#0f766e]"
+                    >
+                      <p className="text-sm font-black text-slate-950">{item.name}</p>
+                      <p className="mt-1 text-xs font-semibold text-slate-500">{item.category}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-2 text-xs font-black uppercase tracking-wide text-slate-500">Saved</p>
+                <div className="grid gap-2">
+                  {!templates.length && <p className="rounded-md bg-slate-50 p-3 text-sm font-semibold text-slate-500">No saved templates yet.</p>}
+                  {templates.slice(0, 8).map((item) => (
+                    <button
+                      key={item._id}
+                      type="button"
+                      onClick={() => loadSavedTemplate(item._id)}
+                      className="rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm hover:border-[#0f766e]"
+                    >
+                      <p className="text-sm font-black text-slate-950">{item.name}</p>
+                      <p className="mt-1 text-xs font-semibold text-slate-500">{item.slug}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const StatusField = ({ value, onChange, validation }) => (
   <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
     <div className="grid gap-3 md:grid-cols-[220px_minmax(0,1fr)] md:items-center">
@@ -2319,6 +2767,23 @@ const BuilderSidePanel = ({
   selectedBlockId,
   setSelectedBlockId,
   handleBuilderDrop,
+  selectedBlock,
+  moveBlock,
+  removeBlock,
+  duplicateBlock,
+  copyBlock,
+  pasteBlock,
+  canPaste,
+  undo,
+  redo,
+  canUndo,
+  canRedo,
+  updateBlockProps,
+  updateFormField,
+  addFormField,
+  removeFormField,
+  saveSelectedBlock,
+  editorConfig,
   loadTemplate
 }) => {
   const titleMap = {
@@ -2331,32 +2796,37 @@ const BuilderSidePanel = ({
   };
 
   return (
-    <div className="min-w-0 overflow-y-auto p-4 xl:max-h-[calc(100vh-150px)]">
-      <div className="mb-4">
-        {activeSection !== "style" && <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Email Body</p>}
-        <h3 className="mt-1 text-2xl font-black text-slate-900">
-          {activeSection === "style" ? "Email Body" : titleMap[activeSection] || "Builder"}
-        </h3>
-      </div>
+    <div className="min-w-0 overflow-y-auto p-4 xl:h-[calc(100vh-57px)]">
+      {activeSection === "edit" && (
+        <SelectedBlockPanel
+          selectedBlock={selectedBlock}
+          moveBlock={moveBlock}
+          removeBlock={removeBlock}
+          duplicateBlock={duplicateBlock}
+          copyBlock={copyBlock}
+          pasteBlock={pasteBlock}
+          canPaste={canPaste}
+          undo={undo}
+          redo={redo}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          updateBlockProps={updateBlockProps}
+          updateFormField={updateFormField}
+          addFormField={addFormField}
+          removeFormField={removeFormField}
+          saveSelectedBlock={saveSelectedBlock}
+          editorConfig={editorConfig}
+        />
+      )}
 
       {activeSection === "style" && (
-        <div className="space-y-4">
-          <PanelCard title="Template Settings">
-            <div className="grid gap-3">
-              <InputField label="Template Name" name="name" value={template.name} onChange={updateTemplateField} required />
-              <InputField label="Slug" name="slug" value={template.slug} onChange={updateTemplateField} />
-              <InputField label="Subject" name="subject" value={template.subject} onChange={updateTemplateField} />
-              <CompactStatusField
-                value={template.status || "draft"}
-                onChange={(event) => setTemplate({
-                  ...template,
-                  status: event.target.value
-                })}
-              />
-            </div>
-          </PanelCard>
-          <ThemeEditor theme={sourceJson.theme} updateTheme={updateTheme} />
-        </div>
+        <EmailBodyStylePanel
+          template={template}
+          updateTemplateField={updateTemplateField}
+          setTemplate={setTemplate}
+          sourceJson={sourceJson}
+          updateTheme={updateTheme}
+        />
       )}
 
       {activeSection === "layouts" && (
@@ -2418,22 +2888,266 @@ const PanelCard = ({ title, children }) => (
 );
 
 const SectionNotice = ({ text }) => (
-  <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-center text-sm font-medium text-slate-700">
+  <div className="rounded-md border border-[#d5deea] bg-[#f1f5fa] px-4 py-3 text-center text-sm font-medium leading-5 text-slate-800">
     {text}
   </div>
 );
 
+const TemplateStatusMenu = ({
+  openStatus,
+  setOpenStatus,
+  groups,
+  activeTemplateId,
+  loadSavedTemplate
+}) => {
+  const statusLabels = {
+    draft: "Drafts",
+    published: "Published"
+  };
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpenStatus(openStatus ? "" : "draft")}
+        className="inline-flex items-center gap-2 rounded-md border border-[#dde5f0] bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+      >
+        Templates
+        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600">
+          {(groups.draft?.length || 0) + (groups.published?.length || 0)}
+        </span>
+        <ChevronDown size={16} />
+      </button>
+
+      {openStatus && (
+        <div className="absolute right-0 top-11 z-50 w-80 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_18px_48px_rgba(15,23,42,0.18)]">
+          <div className="flex border-b border-slate-100 bg-slate-50 p-1">
+            {["draft", "published"].map((status) => (
+              <button
+                key={status}
+                type="button"
+                onClick={() => setOpenStatus(status)}
+                className={`flex-1 rounded-md px-3 py-2 text-xs font-black ${
+                  openStatus === status
+                    ? "bg-white text-[#6c4cff] shadow-sm"
+                    : "text-slate-500 hover:bg-white"
+                }`}
+              >
+                {statusLabels[status]} ({groups[status]?.length || 0})
+              </button>
+            ))}
+          </div>
+          <div className="max-h-80 space-y-2 overflow-y-auto p-3">
+            {!groups[openStatus]?.length && (
+              <p className="rounded-md bg-slate-50 p-3 text-sm font-medium text-slate-500">
+                No {statusLabels[openStatus].toLowerCase()} templates.
+              </p>
+            )}
+            {(groups[openStatus] || []).map((item) => (
+              <button
+                key={item._id}
+                type="button"
+                onClick={() => {
+                  loadSavedTemplate(item._id);
+                  setOpenStatus("");
+                }}
+                className={`w-full rounded-md border p-3 text-left hover:border-[#6c4cff] hover:bg-[#f6f3ff] ${
+                  activeTemplateId === item._id
+                    ? "border-[#6c4cff] bg-[#f6f3ff]"
+                    : "border-slate-200 bg-white"
+                }`}
+              >
+                <span className="block truncate text-sm font-black text-slate-900">{item.name || "Untitled template"}</span>
+                <span className="mt-1 block truncate text-xs font-medium text-slate-500">{item.slug || item.subject || item._id}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const CanvasViewSwitch = ({ value, onChange }) => {
+  const items = [
+    ["design", "Design"],
+    ["html", "HTML"],
+    ["amp", "AMP"],
+    ["formHtml", "Form"]
+  ];
+
+  return (
+    <div className="flex max-w-full overflow-x-auto rounded-md border border-[#dde5f0] bg-slate-50 p-1">
+      {items.map(([id, label]) => (
+        <button
+          key={id}
+          type="button"
+          onClick={() => onChange(id)}
+          className={`rounded px-3 py-1.5 text-xs font-black ${
+            value === id
+              ? "bg-white text-[#6c4cff] shadow-sm"
+              : "text-slate-500 hover:bg-white"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+};
+
+const TemplatePreviewWorkspace = ({ mode, setMode, preview, onBack }) => {
+  const previewMarkup = replaceSampleValues(preview?.[mode] || preview?.html || "");
+  const labels = {
+    html: "HTML",
+    amp: "AMP"
+  };
+
+  return (
+    <section className="min-h-screen bg-[#f5f7fb] text-slate-950">
+      <header className="grid min-h-14 grid-cols-[minmax(160px,1fr)_auto_minmax(160px,1fr)] items-center border-b border-[#dde5f0] bg-white px-4">
+        <div className="flex items-center">
+          <button
+            type="button"
+            onClick={onBack}
+            className="inline-flex items-center gap-2 rounded-md bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200"
+          >
+            <span className="text-lg leading-none">&larr;</span>
+            Back to Editor
+          </button>
+        </div>
+
+        <div className="flex overflow-hidden rounded-md border border-[#d8e0ea] bg-white">
+          {["html", "amp"].map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => setMode(item)}
+              className={`px-5 py-2 text-sm font-semibold ${
+                mode === item ? "bg-slate-50 text-[#6c4cff]" : "text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {labels[item]}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => alert("Test email sending can be connected to your backend endpoint.")}
+            className="rounded-md bg-[#6c4cff] px-5 py-2 text-sm font-bold text-white hover:bg-[#5b3ded]"
+          >
+            Send Test Email
+          </button>
+        </div>
+      </header>
+
+      <div className="border-b border-[#dde5f0] bg-white/80 px-4 py-3 text-center text-sm text-slate-700">
+        <span className="mr-2 inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-500 text-[10px] font-black">i</span>
+        This is a tentative preview and it may vary in certain email clients like Outlook and Yahoo.
+      </div>
+
+      <main className="mx-auto grid max-w-[1180px] gap-10 px-4 py-6 lg:grid-cols-[minmax(0,616px)_minmax(0,448px)]">
+        <PreviewDeviceFrame
+          title="600px"
+          icon="desktop"
+          markup={previewMarkup}
+          width={616}
+          iframeWidth="100%"
+          height={520}
+        />
+        <PreviewDeviceFrame
+          title="430px"
+          icon="mobile"
+          markup={previewMarkup}
+          width={448}
+          iframeWidth="430px"
+          height={620}
+        />
+      </main>
+    </section>
+  );
+};
+
+const PreviewDeviceFrame = ({ title, icon, markup, width, iframeWidth, height }) => (
+  <section className="overflow-hidden border border-[#d8e0ea] bg-white shadow-[0_12px_35px_rgba(15,23,42,0.08)]" style={{ maxWidth: `${width}px` }}>
+    <div className="flex h-14 items-center justify-center gap-3 border-b border-[#d8e0ea] bg-white text-sm font-medium text-slate-800">
+      <span>{icon === "mobile" ? "▯" : "▱"}</span>
+      <span>{title}</span>
+      {icon === "mobile" && <ChevronDown size={15} />}
+    </div>
+    <div className="bg-[#f8fafc] p-2">
+      <iframe
+        title={`${title} email preview`}
+        srcDoc={markup}
+        className="mx-auto block border-0 bg-white"
+        style={{
+          width: iframeWidth,
+          maxWidth: "100%",
+          height: `${height}px`
+        }}
+      />
+    </div>
+  </section>
+);
+
+const LiveCanvasPreview = ({ markup, rawMarkup, mode, viewport }) => {
+  const labels = {
+    html: "HTML Email",
+    amp: "AMP Email",
+    formHtml: "AMP Web Form"
+  };
+  const isMobile = viewport === "mobile";
+
+  return (
+    <section className="min-h-[calc(100vh-97px)] bg-[#f4f6f9] p-4">
+      <div className="mb-3 flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-black uppercase tracking-wide text-slate-500">
+          Live canvas output: {labels[mode] || "Preview"}
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            const blob = new Blob([rawMarkup || ""], { type: "text/html" });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `${mode}-template.html`;
+            link.click();
+            URL.revokeObjectURL(url);
+          }}
+          className="rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-50"
+        >
+          Export
+        </button>
+      </div>
+      <div className={isMobile ? "mx-auto max-w-[410px] rounded bg-white p-3 shadow-sm" : "rounded bg-white shadow-sm"}>
+        <iframe
+          title={`${labels[mode] || "Live"} canvas output`}
+          srcDoc={markup}
+          className={`block w-full bg-white ${isMobile ? "h-[680px]" : "h-[calc(100vh-170px)]"}`}
+        />
+      </div>
+    </section>
+  );
+};
+
 const DesignSearchChips = () => (
-  <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+  <div>
     <input
       readOnly
       value=""
       placeholder="Search by keywords or use cases"
-      className={inputClass}
+      className="h-9 w-full rounded border border-[#d5deea] bg-white px-3 text-xs text-slate-500 outline-none"
     />
-    <div className="mt-3 flex flex-wrap gap-2">
+    <div className="mt-6 flex flex-wrap gap-2">
       {["All", "Header", "Hero", "Editorial", "Highlights", "E-commerce", "Gallery", "Footer"].map((chip) => (
-        <span key={chip} className="rounded-full border border-indigo-100 px-3 py-1.5 text-sm font-semibold text-slate-700">
+        <span key={chip} className={`rounded-full border px-4 py-2 text-sm font-medium ${
+          chip === "All"
+            ? "border-[#6c4cff] text-[#6c4cff]"
+            : "border-[#d5deea] text-slate-700"
+        }`}>
           {chip}
         </span>
       ))}
@@ -2478,8 +3192,8 @@ const DesignGallery = ({ loadTemplate }) => (
     {designSections.map((section) => (
       <div key={section.title}>
         <div className="mb-3 flex items-center justify-between">
-          <p className="text-xs font-bold uppercase tracking-wide text-slate-400">{section.title}</p>
-          <button type="button" className="text-xs font-bold text-indigo-600">See all</button>
+          <p className="text-xs font-bold uppercase tracking-wide text-[#94a3b8]">{section.title}</p>
+          <button type="button" className="text-xs font-medium text-[#6c4cff]">See all</button>
         </div>
         <div className="grid grid-cols-2 gap-3">
           {section.items.map((item) => (
@@ -2503,10 +3217,10 @@ const DesignGallery = ({ loadTemplate }) => (
 
                 loadTemplate(template);
               }}
-              className="cursor-grab overflow-hidden rounded-md border border-slate-200 bg-white p-2 text-left hover:border-indigo-300 hover:bg-indigo-50 active:cursor-grabbing"
+              className="cursor-grab overflow-hidden rounded border border-[#d5deea] bg-white p-2 text-left hover:border-[#6c4cff] hover:bg-[#f6f3ff] active:cursor-grabbing"
             >
               <DesignPreview media={item.media} />
-              <span className="mt-2 block truncate text-xs font-semibold text-slate-700">{item.label}</span>
+              <span className="sr-only">{item.label}</span>
             </button>
           ))}
         </div>
@@ -2588,28 +3302,28 @@ const WidgetGallery = ({ labels, addBlock }) => {
     {
       title: "Ratings",
       items: [
-        { type: "poll", label: "Poll" },
-        { type: "rating", label: "Thumbs up or down" }
+        { type: "poll", label: "Poll", preview: "poll" },
+        { type: "rating", label: "Thumbs up or down", preview: "thumbs" }
       ]
     },
     {
       title: "Gamification",
       items: [
-        { type: "quiz", label: "Quiz" },
-        { type: "nps", label: "Spin the wheel" }
+        { type: "quiz", label: "Quiz", preview: "quiz" },
+        { type: "nps", label: "Spin the wheel", preview: "wheel" }
       ]
     },
     {
       title: "Media",
       items: [
-        { type: "carousel", label: "Image carousel" }
+        { type: "carousel", label: "Image carousel", preview: "carousel" }
       ]
     },
     {
       title: "E-commerce",
       items: [
-        { type: "productList", label: "Shopify Product Catalog" },
-        { type: "productCard", label: "Abandoned checkout" }
+        { type: "productList", label: "Shopify Product Catalog", preview: "catalog" },
+        { type: "productCard", label: "Abandoned checkout", preview: "checkout" }
       ]
     }
   ];
@@ -2617,10 +3331,10 @@ const WidgetGallery = ({ labels, addBlock }) => {
   return (
     <div className="space-y-5">
       <SectionNotice text="Widgets will be added to mobile and desktop." />
-      <input readOnly value="" placeholder="Search by widget name" className={inputClass} />
+      <input readOnly value="" placeholder="Search by widget name" className="h-9 w-full rounded border border-[#d5deea] bg-white px-3 text-xs text-slate-500 outline-none" />
       <div className="flex flex-wrap gap-2">
         {["All", "Ratings", "Gamification", "Media", "Real time updates", "Scheduling", "E-commerce"].map((chip) => (
-          <span key={chip} className="rounded-full border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-700 first:border-indigo-500 first:text-indigo-600">
+          <span key={chip} className="rounded-full border border-[#d5deea] px-3 py-1.5 text-sm font-medium text-slate-700 first:border-[#6c4cff] first:text-[#6c4cff]">
             {chip}
           </span>
         ))}
@@ -2633,24 +3347,24 @@ const WidgetGallery = ({ labels, addBlock }) => {
           </div>
           <div className="grid grid-cols-2 gap-3">
             {section.items.map((item) => (
-              <button
-                key={item.label}
-                type="button"
+            <button
+              key={item.label}
+              type="button"
                 draggable
                 onDragStart={(event) => {
                   event.dataTransfer.setData("component/type", item.type);
                   event.dataTransfer.effectAllowed = "copy";
                 }}
                 onClick={() => addBlock(item.type)}
-                className="cursor-grab overflow-hidden rounded-md border border-slate-200 bg-white text-left hover:border-indigo-300 hover:bg-indigo-50 active:cursor-grabbing"
-              >
-                <div className="border-b border-slate-200 p-3">
-                  <ComponentGraphic type={item.type} large />
+              className="cursor-grab overflow-hidden rounded border border-[#d5deea] bg-white text-left hover:border-[#6c4cff] hover:bg-[#f6f3ff] active:cursor-grabbing"
+            >
+                <div className="border-b border-[#d5deea] bg-[#f8fbff] p-3">
+                  <WidgetPreview kind={item.preview} />
                 </div>
-                <span className="block truncate px-3 py-2 text-xs font-semibold text-slate-700">
+                <span className="block truncate px-3 py-2 text-xs font-medium text-slate-700">
                   {item.label || labels[item.type] || item.type}
                 </span>
-              </button>
+            </button>
             ))}
           </div>
         </div>
@@ -2677,10 +3391,10 @@ const FormsGallery = ({ labels, addBlock }) => {
             key={item}
             type="button"
             onClick={() => setMode(item)}
-            className={`rounded-full border px-4 py-2 text-sm font-semibold capitalize ${
+            className={`rounded-full border px-4 py-2 text-sm font-medium capitalize ${
               mode === item
-                ? "border-indigo-500 text-indigo-600"
-                : "border-slate-200 text-slate-700"
+                ? "border-[#6c4cff] text-[#6c4cff]"
+                : "border-[#d5deea] text-slate-700"
             }`}
           >
             {item}
@@ -2689,9 +3403,10 @@ const FormsGallery = ({ labels, addBlock }) => {
       </div>
       <p className="text-sm leading-relaxed text-slate-700">
         Designed for straightforward use cases like lead generation, NPS survey, feedback collection, etc.
-        <span className="block font-semibold text-indigo-600">Learn more</span>
+        <span className="block font-semibold text-[#6c4cff]">Learn more</span>
       </p>
-      <PanelCard title="Start from scratch">
+      <div>
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-[#94a3b8]">Start from scratch</p>
         <button
           type="button"
           draggable
@@ -2700,13 +3415,13 @@ const FormsGallery = ({ labels, addBlock }) => {
             event.dataTransfer.effectAllowed = "copy";
           }}
           onClick={() => addBlock("form")}
-          className="w-full cursor-grab rounded-md border border-slate-200 bg-white p-3 text-left hover:border-indigo-300 hover:bg-indigo-50 active:cursor-grabbing"
+          className="w-full cursor-grab rounded border border-[#d5deea] bg-white p-2 text-left hover:border-[#6c4cff] hover:bg-[#f6f3ff] active:cursor-grabbing"
         >
-          <ComponentGraphic type="form" large />
+          <StartFormPreview />
         </button>
-      </PanelCard>
+      </div>
       <div>
-        <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-400">Prebuilt Forms</p>
+        <p className="mb-3 text-[10px] font-bold uppercase tracking-wide text-[#94a3b8]">Prebuilt Forms</p>
         <div className="space-y-3">
           {forms.map((form) => (
             <button
@@ -2718,10 +3433,10 @@ const FormsGallery = ({ labels, addBlock }) => {
                 event.dataTransfer.effectAllowed = "copy";
               }}
               onClick={() => addBlock(form.type)}
-              className="w-full cursor-grab rounded-lg border border-slate-200 bg-white p-5 text-left hover:border-indigo-300 hover:bg-indigo-50 active:cursor-grabbing"
+              className="w-full cursor-grab rounded border border-[#d5deea] bg-white p-5 text-left hover:border-[#6c4cff] hover:bg-[#f6f3ff] active:cursor-grabbing"
             >
               <p className="mb-4 text-lg font-black text-slate-700">{form.title}</p>
-              <FormPreview />
+              <FormPreview variant={form.type} />
               <span className="sr-only">{labels[form.type] || form.type}</span>
             </button>
           ))}
@@ -2731,21 +3446,75 @@ const FormsGallery = ({ labels, addBlock }) => {
   );
 };
 
-const FormPreview = () => (
-  <div className="space-y-3">
-    <div className="h-9 rounded border border-slate-300 bg-white" />
-    <div className="grid grid-cols-2 gap-2">
-      <div className="h-8 rounded-full bg-emerald-400" />
-      <div className="h-8 rounded-full border border-slate-300 bg-slate-50" />
+const StartFormPreview = () => (
+  <div className="rounded bg-[#f8fbff] p-4">
+    <div className="mx-auto h-2 w-32 rounded bg-slate-300" />
+    <div className="mx-auto mt-4 h-2 w-48 rounded bg-slate-300" />
+    <div className="mt-5 rounded bg-[#edf2f8] p-3">
+      <div className="flex justify-center gap-3 text-[9px] text-slate-500">
+        {["Input", "Select", "Radio", "Checkbox", "Email"].map((item) => (
+          <span key={item} className="inline-flex items-center gap-1">
+            <span className="h-3 w-3 rounded border border-slate-300 bg-white" />
+            {item}
+          </span>
+        ))}
+      </div>
     </div>
-    <div className="grid grid-cols-[1fr_0.8fr] gap-2">
-      <div className="h-8 rounded-full border border-slate-300 bg-slate-50" />
-      <div className="h-8 rounded-full border border-slate-300 bg-slate-50" />
-    </div>
-    <div className="h-10 rounded border border-slate-300 bg-white" />
-    <div className="h-10 w-24 rounded bg-emerald-500" />
+    <div className="mt-4 h-3 w-14 rounded bg-slate-300" />
   </div>
 );
+
+const FormPreview = ({ variant }) => {
+  if (variant === "productFeedback") {
+    return (
+      <div className="space-y-3">
+        <div className="h-9 rounded border border-slate-300 bg-white" />
+        <div className="h-9 rounded border border-slate-300 bg-white" />
+        <div className="h-24 rounded border border-slate-300 bg-white" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="h-9 rounded border border-slate-300 bg-white" />
+      <div className="grid grid-cols-[0.55fr_1fr] gap-2">
+        <div className="h-8 rounded-full bg-emerald-400" />
+        <div className="h-8 rounded-full border border-slate-300 bg-slate-50" />
+      </div>
+      <div className="grid grid-cols-[1fr_0.72fr] gap-2">
+        <div className="h-8 rounded-full border border-slate-300 bg-slate-50" />
+        <div className="h-8 rounded-full border border-slate-300 bg-slate-50" />
+      </div>
+      <div className="h-10 rounded border border-slate-300 bg-white" />
+      <div className="h-10 w-24 rounded bg-emerald-500" />
+    </div>
+  );
+};
+
+const WidgetPreview = ({ kind }) => {
+  if (kind === "poll") {
+    return <div className="space-y-2"><div className="h-2 w-20 rounded bg-slate-300" /><BarMock w="80%" c="bg-violet-200" /><BarMock w="55%" c="bg-slate-200" /><BarMock w="70%" c="bg-slate-200" /></div>;
+  }
+  if (kind === "thumbs") {
+    return <div className="space-y-5"><div className="h-2 w-24 rounded bg-slate-300" /><div className="flex justify-center gap-4"><span className="flex h-9 w-9 items-center justify-center rounded-full border border-emerald-300 text-emerald-500">♡</span><span className="flex h-9 w-9 items-center justify-center rounded-full border border-rose-300 text-rose-500">♡</span></div></div>;
+  }
+  if (kind === "quiz") {
+    return <div className="space-y-2"><div className="h-2 w-24 rounded bg-slate-300" /><div className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-[9px] text-emerald-600">✓ Correct answer!</div><div className="rounded border border-rose-300 bg-rose-50 px-2 py-1 text-[9px] text-rose-500">× Option 2</div></div>;
+  }
+  if (kind === "wheel") {
+    return <div className="flex justify-center"><div className="h-20 w-20 rounded-full border-[14px] border-slate-300 border-l-blue-600 border-t-amber-400 bg-white" /></div>;
+  }
+  if (kind === "carousel") {
+    return <div className="flex flex-col items-center"><div className="relative h-20 w-28 rounded border border-slate-300 bg-white"><span className="absolute -left-2 top-8 h-3 w-3 rounded-full bg-violet-300" /><span className="absolute -right-2 top-8 h-3 w-3 rounded-full bg-violet-300" /><Image size={18} className="mx-auto mt-7 text-violet-400" /></div><div className="mt-2 h-5 w-10 rounded bg-slate-300" /></div>;
+  }
+  if (kind === "catalog" || kind === "checkout") {
+    return <div className="space-y-2"><div className="h-2 w-16 rounded bg-slate-300" />{[1, 2].map((item) => <div key={item} className="flex items-center gap-2 rounded bg-white p-1"><div className="h-5 w-5 rounded bg-slate-200" /><div className="h-2 flex-1 rounded bg-slate-300" /><div className="h-4 w-4 rounded border border-slate-300" /></div>)}</div>;
+  }
+  return <ComponentGraphic type="card" large />;
+};
+
+const BarMock = ({ w, c }) => <div className="h-4 rounded border border-slate-300 bg-white p-0.5"><div className={`h-full rounded ${c}`} style={{ width: w }} /></div>;
 
 const QuickBlockGrid = ({ title, description, items, labels, addBlock }) => (
   <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
@@ -2781,15 +3550,9 @@ const ComponentLibrary = ({
   componentGroups: groups = componentGroups,
   componentLabels: labels = componentLabels
 }) => {
-  const [query, setQuery] = useState("");
-  const elementTypes = ["heading", "text", "button", "image", "divider", "spacer", "social", "bullet", "number", "table", "card"];
+  const textTypes = ["heading", "text", "textSection"];
+  const elementTypes = ["button", "image", "divider", "spacer", "social", "bullet", "number", "table", "card"];
   const layoutTypes = ["hero", "card", "twoColumn", "productCard", "testimonial", "offer", "productList"];
-  const search = query.trim().toLowerCase();
-  const filterTypes = (types) => types.filter((type) => {
-    const label = labels[type] || type;
-    const description = componentDescriptions[type] || "";
-    return `${label} ${type} ${description}`.toLowerCase().includes(search);
-  });
 
   return (
     <div className="space-y-5">
@@ -2800,23 +3563,23 @@ const ComponentLibrary = ({
         </p>
       </div>
 
-      <input
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        placeholder="Search by keywords or use cases"
-        className={inputClass}
+      <ElementGrid
+        title="Text"
+        items={textTypes}
+        labels={labels}
+        addBlock={addBlock}
       />
 
       <ElementGrid
         title="Elements"
-        items={filterTypes(elementTypes)}
+        items={elementTypes}
         labels={labels}
         addBlock={addBlock}
       />
 
       <ElementGrid
         title="Pre-made layouts"
-        items={filterTypes(layoutTypes)}
+        items={layoutTypes}
         labels={labels}
         addBlock={addBlock}
         large
@@ -2839,11 +3602,11 @@ const ElementGrid = ({ title, items, labels, addBlock, large = false }) => (
             event.dataTransfer.effectAllowed = "copy";
           }}
           onClick={() => addBlock(type)}
-          className="cursor-grab rounded-md border border-slate-200 bg-white p-3 text-center hover:border-indigo-300 hover:bg-indigo-50 active:cursor-grabbing"
+          className="flex h-[74px] cursor-grab flex-col items-center justify-center rounded border border-[#d5deea] bg-white p-2 text-center hover:border-[#6c4cff] hover:bg-[#f6f3ff] active:cursor-grabbing"
         >
-          <ComponentGraphic type={type} large={large} />
+          <ElementIcon type={type} />
           <span className="mt-2 block truncate text-[11px] font-semibold text-slate-700">
-            {labels[type] || type}
+            {elementLabel(type, labels)}
           </span>
         </button>
       ))}
@@ -2855,6 +3618,52 @@ const ElementGrid = ({ title, items, labels, addBlock, large = false }) => (
     </div>
   </div>
 );
+
+const elementLabel = (type, labels) => {
+  const map = {
+    heading: "Heading",
+    text: "Paragraph",
+    button: "Button",
+    image: "Image",
+    divider: "Divider",
+    spacer: "Spacer",
+    social: "Social",
+    bullet: "Bullet",
+    number: "Number",
+    table: "Table",
+    card: "Element set",
+    textSection: "Text"
+  };
+
+  return map[type] || labels[type] || type;
+};
+
+const ElementIcon = ({ type }) => {
+  const iconClass = "text-slate-500";
+  const map = {
+    heading: Type,
+    text: AlignJustify,
+    button: MousePointer2,
+    image: Image,
+    divider: Minus,
+    spacer: Space,
+    social: Grid2X2,
+    bullet: List,
+    number: ListOrdered,
+    table: Table2,
+    card: Library,
+    textSection: Type,
+    hero: AlignJustify,
+    twoColumn: Grid2X2,
+    productCard: Image,
+    testimonial: AlignJustify,
+    offer: MousePointer2,
+    productList: Table2
+  };
+  const Icon = map[type] || Grid2X2;
+
+  return <Icon size={22} strokeWidth={1.8} className={iconClass} />;
+};
 
 const SavedBlockLibrary = ({ savedBlocks, addSavedBlock }) => (
   <div className="mb-5 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
@@ -3405,7 +4214,11 @@ const CanvasBlock = ({
             color: props.color || "#ffffff",
             borderRadius: `${props.radius || 6}px`,
             padding: props.padding || "13px 20px",
-            fontSize: `${props.fontSize || 16}px`
+            fontSize: `${props.fontSize || 16}px`,
+            width: props.width || props.buttonWidth || "auto",
+            maxWidth: "100%",
+            minHeight: props.height ? `${Number(props.height)}px` : undefined,
+            boxSizing: "border-box"
           }}
         >
           {props.text || "Button"}
@@ -3416,51 +4229,150 @@ const CanvasBlock = ({
   }
 
   if (["form", "poll", "survey", "rating", "nps", "appointment", "booking", "quiz", "productFeedback", "rsvp"].includes(block.type)) {
+    const inputBackgroundColor = props.inputBackgroundColor || "#f8fafc";
+    const showTitle = props.showTitle !== false;
+    const showDescription = props.showDescription !== false;
+    const hasHeader = showTitle || (showDescription && props.description);
+    const fields = props.fields || props.questions || [];
+    const updateInlineFieldLabel = (fieldIndex, value) => {
+      if (!props.fields) {
+        return;
+      }
+
+      updateBlockProps(block.id, {
+        fields: props.fields.map((field, index) => (
+          index === fieldIndex ? { ...field, label: value } : field
+        ))
+      });
+    };
+
     return (
       <div {...dragProps} className={commonClass}>
-        <div className="rounded-lg border border-slate-200 p-4">
-          <h3
-            contentEditable
-            suppressContentEditableWarning
-            onBlur={(event) => updateBlockProps(block.id, { title: event.currentTarget.textContent })}
-            className="mb-1 text-lg font-bold text-slate-900"
-          >
-            {props.title || "Form"}
-          </h3>
-          {props.description && (
+        <div
+          className="rounded-lg border border-slate-200"
+          style={{
+            padding: props.padding || "18px",
+            backgroundColor: props.formBackgroundColor || "#ffffff",
+            borderColor: props.borderColor || "#e2e8f0",
+            borderRadius: `${props.radius || 8}px`
+          }}
+        >
+          {showTitle && (
+            <h3
+              contentEditable
+              suppressContentEditableWarning
+              onBlur={(event) => updateBlockProps(block.id, { title: event.currentTarget.textContent })}
+              className="mb-1 text-lg font-bold text-slate-900"
+              style={{
+                color: props.titleColor || "#020617",
+                fontSize: `${props.titleSize || 18}px`,
+                fontWeight: props.titleWeight || 800,
+                textAlign: props.titleAlign || props.align || "left",
+                marginTop: `${Number(props.titleTopGap ?? 0)}px`,
+                marginBottom: `${Number(props.titleBottomGap ?? 0)}px`,
+                paddingLeft: `${Number(props.titleIndent ?? 0)}px`
+              }}
+            >
+              {props.title || "Form"}
+            </h3>
+          )}
+          {showDescription && props.description && (
             <p
               contentEditable
               suppressContentEditableWarning
               onBlur={(event) => updateBlockProps(block.id, { description: event.currentTarget.textContent })}
               className="mb-3 text-sm text-slate-500"
+              style={{
+                color: props.descriptionColor || props.textColor || "#64748b",
+                fontSize: `${props.descriptionSize || props.textSize || 14}px`,
+                fontWeight: props.descriptionWeight || props.textWeight || 400,
+                textAlign: props.descriptionAlign || props.titleAlign || props.align || "left"
+              }}
             >
               {props.description}
             </p>
           )}
-          <div className="space-y-3">
-            {(props.fields || props.questions || []).map((field, index) => (
+          <div
+            className="grid"
+            style={{
+              gap: `${Number(props.fieldGap ?? 10)}px`,
+              marginTop: hasHeader ? `${Number(props.fieldTopGap ?? 14)}px` : 0
+            }}
+          >
+            {fields.map((field, index) => (
               <label key={`${field.name}-${index}`} className="block text-sm font-semibold text-slate-700">
-                {field.label || field.question || field.name}{field.required ? " *" : ""}
-                <div className="mt-1 h-10 rounded-md border border-slate-300 bg-slate-50" />
+                <div style={{ textAlign: props.inputAlign || "left" }}>
+                  <span
+                    contentEditable={Boolean(props.fields)}
+                    suppressContentEditableWarning
+                    onBlur={(event) => updateInlineFieldLabel(index, event.currentTarget.textContent.replace(/\s\*$/, ""))}
+                    className="inline-block rounded outline-none focus:bg-white focus:ring-2 focus:ring-emerald-500/30"
+                    style={{
+                      width: props.inputWidth || "100%",
+                      maxWidth: "100%",
+                      textAlign: "left",
+                      color: props.inputTextColor || "#64748b",
+                      fontSize: `${props.inputFontSize || 14}px`,
+                      fontWeight: props.inputFontWeight || 600
+                    }}
+                  >
+                    {field.label || field.question || field.name}{field.required ? " *" : ""}
+                  </span>
+                </div>
+                <div style={{ marginTop: `${Number(props.labelGap ?? 5)}px`, textAlign: props.inputAlign || "left" }}>
+                  <div
+                    className="border border-slate-300"
+                    style={{
+                      display: "inline-block",
+                      backgroundColor: inputBackgroundColor,
+                      borderRadius: `${Number(props.inputRadius ?? 6)}px`,
+                      width: props.inputWidth || "100%",
+                      maxWidth: "100%",
+                      minHeight: `${Number(props.inputHeight ?? 40)}px`
+                    }}
+                  >
+                    <span className="px-3 py-2 text-sm text-slate-400">{field.placeholder || ""}</span>
+                  </div>
+                </div>
               </label>
             ))}
             {!props.fields && !props.questions && props.question && (
               <label className="block text-sm font-semibold text-slate-700">
                 {props.question}
-                <div className="mt-1 h-10 rounded-md border border-slate-300 bg-slate-50" />
+                <div style={{ marginTop: `${Number(props.labelGap ?? 5)}px`, textAlign: props.inputAlign || "left" }}>
+                  <div
+                    className="border border-slate-300"
+                    style={{
+                      display: "inline-block",
+                      backgroundColor: inputBackgroundColor,
+                      borderRadius: `${Number(props.inputRadius ?? 6)}px`,
+                      width: props.inputWidth || "100%",
+                      maxWidth: "100%",
+                      minHeight: `${Number(props.inputHeight ?? 40)}px`
+                    }}
+                  />
+                </div>
               </label>
             )}
           </div>
-          <div
-            contentEditable
-            suppressContentEditableWarning
-            onBlur={(event) => updateBlockProps(block.id, { submitText: event.currentTarget.textContent })}
-            className="mt-4 rounded-md py-3 text-center text-sm font-bold text-white"
-            style={{
-              backgroundColor: props.backgroundColor || theme.primaryColor || "#178218"
-            }}
-          >
-            {props.submitText || "Submit"}
+          <div style={{ marginTop: `${Number(props.buttonTopGap ?? 12)}px`, textAlign: props.buttonAlign || props.align || "left" }}>
+            <div
+              contentEditable
+              suppressContentEditableWarning
+              onBlur={(event) => updateBlockProps(block.id, { submitText: event.currentTarget.textContent })}
+              className="py-3 text-center text-sm font-bold text-white"
+              style={{
+                display: "inline-block",
+                backgroundColor: props.buttonColor || props.backgroundColor || theme.primaryColor || "#178218",
+                color: props.buttonTextColor || props.color || "#ffffff",
+                borderRadius: `${Number(props.buttonRadius ?? 6)}px`,
+                width: props.buttonWidth || "100%",
+                maxWidth: "100%",
+                minHeight: `${Number(props.buttonHeight ?? 44)}px`
+              }}
+            >
+              {props.submitText || "Submit"}
+            </div>
           </div>
         </div>
         {actions}
@@ -4046,16 +4958,162 @@ const LegacyOutputPreview = ({
   );
 };
 
-const ColorField = ({ label, value, onChange }) => (
-  <label className="block text-sm font-semibold text-slate-700">
-    {label}
-    <input
-      type="color"
-      value={value}
-      onChange={onChange}
-      className="mt-2 h-10 w-full rounded-md border border-slate-300"
-    />
-  </label>
+const colorTextToHex = (value = "#000000") => {
+  const color = String(value || "").trim();
+
+  if (/^#[0-9a-f]{6}$/i.test(color)) {
+    return color;
+  }
+
+  if (/^#[0-9a-f]{3}$/i.test(color)) {
+    return `#${color[1]}${color[1]}${color[2]}${color[2]}${color[3]}${color[3]}`;
+  }
+
+  const rgbMatch = color.match(/^rgba?\((\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})/i);
+
+  if (rgbMatch) {
+    return `#${rgbMatch.slice(1, 4).map((part) => {
+      const channel = Math.min(255, Math.max(0, Number(part)));
+      return channel.toString(16).padStart(2, "0");
+    }).join("")}`;
+  }
+
+  return "#000000";
+};
+
+const colorPresets = [
+  "#020617",
+  "#334155",
+  "#64748b",
+  "#ffffff",
+  "#6c4cff",
+  "#178218",
+  "#0f766e",
+  "#2563eb",
+  "#dc2626",
+  "#f59e0b"
+];
+
+const ColorField = ({ label, value, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const displayValue = value || "#000000";
+  const pickerValue = colorTextToHex(displayValue);
+  const emitColor = (nextValue) => {
+    onChange({ target: { value: nextValue } });
+  };
+
+  return (
+    <div className="relative block text-sm font-semibold text-slate-700">
+      <span className="mb-2 block">{label}</span>
+      <button
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        className="flex h-10 w-full items-center gap-3 rounded-md border border-slate-300 bg-white px-3 text-left text-sm font-medium text-slate-700 shadow-sm hover:border-slate-400 hover:bg-slate-50"
+      >
+        <span
+          className="h-6 w-6 shrink-0 rounded-md border border-slate-200 shadow-inner"
+          style={{ backgroundColor: displayValue }}
+        />
+        <span className="min-w-0 flex-1 truncate">{displayValue}</span>
+        <ChevronDown size={15} className={`shrink-0 text-slate-400 transition ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-2 w-full min-w-56 rounded-lg border border-white/60 bg-white/80 p-2.5 shadow-xl shadow-slate-900/10 backdrop-blur-xl">
+          <div className="mb-2 flex items-center gap-2">
+            <span
+              className="h-8 w-8 shrink-0 rounded-md border border-white/70 shadow-inner"
+              style={{ backgroundColor: displayValue }}
+            />
+            <div className="min-w-0">
+              <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">Selected</p>
+              <p className="truncate text-xs font-bold text-slate-800">{displayValue}</p>
+            </div>
+          </div>
+
+          <div className="rounded-md border border-white/70 bg-white/55 p-2">
+            <input
+              type="color"
+              value={pickerValue}
+              onChange={(event) => emitColor(event.target.value)}
+              className="h-14 w-full cursor-pointer rounded border border-white/70 bg-white/70 p-1"
+            />
+            <label className="mt-2 block">
+              <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">HEX / RGB</span>
+              <input
+                value={displayValue}
+                onChange={(event) => emitColor(event.target.value)}
+                placeholder="#111827 or rgb(17, 24, 39)"
+                className="w-full rounded-md border border-white/70 bg-white/80 px-2 py-1.5 text-xs font-medium text-slate-700 outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </label>
+          </div>
+
+          <div className="mt-2">
+            <p className="mb-1.5 text-[10px] font-black uppercase tracking-wide text-slate-400">Quick colors</p>
+            <div className="grid grid-cols-5 gap-2">
+              {colorPresets.map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => emitColor(preset)}
+                  title={preset}
+                  className="h-6 rounded border border-white/70 shadow-sm ring-offset-1 hover:ring-2 hover:ring-[#6c4cff]"
+                  style={{ backgroundColor: preset }}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-2 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="rounded-md bg-slate-900/90 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-slate-900"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const TextStyleGroup = ({
+  title,
+  colorLabel,
+  sizeLabel,
+  weightLabel,
+  color,
+  size,
+  weight,
+  onChange,
+  keys
+}) => (
+  <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+    <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">{title}</p>
+    <div className="grid gap-3">
+      <ColorField
+        label={colorLabel}
+        value={color}
+        onChange={(event) => onChange({ [keys.color]: event.target.value })}
+      />
+      <div className="grid grid-cols-2 gap-3">
+        <InputField
+          label={sizeLabel}
+          type="number"
+          value={size}
+          onChange={(event) => onChange({ [keys.size]: Number(event.target.value) })}
+        />
+        <InputField
+          label={weightLabel}
+          value={weight}
+          onChange={(event) => onChange({ [keys.weight]: event.target.value })}
+        />
+      </div>
+    </div>
+  </div>
 );
 
 const getStoredImageGallery = () => {
@@ -4262,6 +5320,17 @@ const ImageBlockEditor = ({ block, updateBlockProps }) => {
         <InputField label="Height" type="number" value={props.height || 320} onChange={(event) => updateBlockProps(block.id, { height: Number(event.target.value) })} />
       </div>
       <div className="grid grid-cols-2 gap-3">
+        <InputField label="Mobile Width" type="number" value={props.mobileWidth || Math.min(Number(props.width || 600), 320)} onChange={(event) => updateBlockProps(block.id, { mobileWidth: Number(event.target.value) })} />
+        <label className="block text-sm font-semibold text-slate-700">
+          Fit
+          <select value={props.objectFit || "contain"} onChange={(event) => updateBlockProps(block.id, { objectFit: event.target.value })} className={`mt-2 ${inputClass}`}>
+            <option value="contain">Contain</option>
+            <option value="cover">Cover</option>
+            <option value="fill">Fill</option>
+          </select>
+        </label>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
         <InputField label="Radius" type="number" value={props.radius || 0} onChange={(event) => updateBlockProps(block.id, { radius: Number(event.target.value) })} />
         <label className="block text-sm font-semibold text-slate-700">
           Align
@@ -4323,6 +5392,14 @@ const BlockEditor = ({ block, updateBlockProps, updateFormField, addFormField, r
           <InputField label="Radius" type="number" value={props.radius || 6} onChange={(event) => updateBlockProps(block.id, { radius: Number(event.target.value) })} />
           <InputField label="Font Size" type="number" value={props.fontSize || 16} onChange={(event) => updateBlockProps(block.id, { fontSize: Number(event.target.value) })} />
         </div>
+        <div className="grid grid-cols-2 gap-3">
+          <InputField label="Text Weight" value={props.fontWeight || "800"} onChange={(event) => updateBlockProps(block.id, { fontWeight: event.target.value })} />
+          <InputField label="Line Height" value={props.lineHeight || "1.2"} onChange={(event) => updateBlockProps(block.id, { lineHeight: event.target.value })} />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <InputField label="Width" value={props.width || "auto"} onChange={(event) => updateBlockProps(block.id, { width: event.target.value })} />
+          <InputField label="Height" type="number" value={props.height || ""} onChange={(event) => updateBlockProps(block.id, { height: event.target.value ? Number(event.target.value) : "" })} />
+        </div>
         <InputField label="Padding" value={props.padding || "13px 20px"} onChange={(event) => updateBlockProps(block.id, { padding: event.target.value })} />
       </div>
     );
@@ -4331,16 +5408,148 @@ const BlockEditor = ({ block, updateBlockProps, updateFormField, addFormField, r
   if (block.type === "form") {
     return (
       <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+            <input
+              type="checkbox"
+              checked={props.showTitle !== false}
+              onChange={(event) => updateBlockProps(block.id, { showTitle: event.target.checked })}
+            />
+            Show heading
+          </label>
+          <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+            <input
+              type="checkbox"
+              checked={props.showDescription !== false}
+              onChange={(event) => updateBlockProps(block.id, { showDescription: event.target.checked })}
+            />
+            Show subtitle
+          </label>
+        </div>
         <InputField label="Form Title" value={props.title || ""} onChange={(event) => updateBlockProps(block.id, { title: event.target.value })} />
         <InputField label="Submit Text" value={props.submitText || ""} onChange={(event) => updateBlockProps(block.id, { submitText: event.target.value })} />
         <label className="block text-sm font-semibold text-slate-700">
           Description
           <textarea value={props.description || ""} onChange={(event) => updateBlockProps(block.id, { description: event.target.value })} rows={2} className={`mt-2 ${inputClass}`} />
         </label>
-        <ColorField label="Button Color" value={props.backgroundColor || "#178218"} onChange={(event) => updateBlockProps(block.id, { backgroundColor: event.target.value })} />
+        <div className="grid grid-cols-2 gap-3">
+          <ColorField label="Form Background" value={props.formBackgroundColor || "#ffffff"} onChange={(event) => updateBlockProps(block.id, { formBackgroundColor: event.target.value })} />
+          <ColorField label="Border Color" value={props.borderColor || "#e2e8f0"} onChange={(event) => updateBlockProps(block.id, { borderColor: event.target.value })} />
+        </div>
+        <TextStyleGroup
+          title="Title Text"
+          colorLabel="Title Color"
+          sizeLabel="Title Size"
+          weightLabel="Title Weight"
+          color={props.titleColor || "#020617"}
+          size={props.titleSize || 18}
+          weight={props.titleWeight || "800"}
+          onChange={(patch) => updateBlockProps(block.id, patch)}
+          keys={{ color: "titleColor", size: "titleSize", weight: "titleWeight" }}
+        />
+        <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+          <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">Heading Position</p>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-sm font-semibold text-slate-700">
+              Heading Align
+              <select value={props.titleAlign || props.align || "left"} onChange={(event) => updateBlockProps(block.id, { titleAlign: event.target.value })} className={`mt-2 ${inputClass}`}>
+                <option value="left">Left</option>
+                <option value="center">Center</option>
+                <option value="right">Right</option>
+              </select>
+            </label>
+            <label className="block text-sm font-semibold text-slate-700">
+              Subtitle Align
+              <select value={props.descriptionAlign || props.titleAlign || props.align || "left"} onChange={(event) => updateBlockProps(block.id, { descriptionAlign: event.target.value })} className={`mt-2 ${inputClass}`}>
+                <option value="left">Left</option>
+                <option value="center">Center</option>
+                <option value="right">Right</option>
+              </select>
+            </label>
+            <InputField label="Heading Top" type="number" value={props.titleTopGap ?? 0} onChange={(event) => updateBlockProps(block.id, { titleTopGap: Number(event.target.value) })} />
+            <InputField label="Heading Bottom" type="number" value={props.titleBottomGap ?? 0} onChange={(event) => updateBlockProps(block.id, { titleBottomGap: Number(event.target.value) })} />
+            <InputField label="Heading Left" type="number" value={props.titleIndent ?? 0} onChange={(event) => updateBlockProps(block.id, { titleIndent: Number(event.target.value) })} />
+          </div>
+        </div>
+        <TextStyleGroup
+          title="Description Text"
+          colorLabel="Description Color"
+          sizeLabel="Description Size"
+          weightLabel="Description Weight"
+          color={props.descriptionColor || props.textColor || "#64748b"}
+          size={props.descriptionSize || props.textSize || 14}
+          weight={props.descriptionWeight || props.textWeight || "400"}
+          onChange={(patch) => updateBlockProps(block.id, patch)}
+          keys={{ color: "descriptionColor", size: "descriptionSize", weight: "descriptionWeight" }}
+        />
+        <ColorField label="Input Background" value={props.inputBackgroundColor || "#f8fafc"} onChange={(event) => updateBlockProps(block.id, { inputBackgroundColor: event.target.value })} />
+        <TextStyleGroup
+          title="Input Text"
+          colorLabel="Input Text Color"
+          sizeLabel="Input Text Size"
+          weightLabel="Input Text Weight"
+          color={props.inputTextColor || "#64748b"}
+          size={props.inputFontSize || 14}
+          weight={props.inputFontWeight || "600"}
+          onChange={(patch) => updateBlockProps(block.id, patch)}
+          keys={{ color: "inputTextColor", size: "inputFontSize", weight: "inputFontWeight" }}
+        />
+        <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+          <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">Field Box</p>
+          <div className="grid grid-cols-2 gap-3">
+            <InputField label="Field Width" value={props.inputWidth || "100%"} onChange={(event) => updateBlockProps(block.id, { inputWidth: event.target.value })} />
+            <InputField label="Field Height" type="number" value={props.inputHeight ?? 40} onChange={(event) => updateBlockProps(block.id, { inputHeight: Number(event.target.value) })} />
+            <InputField label="Field Radius" type="number" value={props.inputRadius ?? 6} onChange={(event) => updateBlockProps(block.id, { inputRadius: Number(event.target.value) })} />
+            <label className="block text-sm font-semibold text-slate-700">
+              Field Align
+              <select value={props.inputAlign || "left"} onChange={(event) => updateBlockProps(block.id, { inputAlign: event.target.value })} className={`mt-2 ${inputClass}`}>
+                <option value="left">Left</option>
+                <option value="center">Center</option>
+                <option value="right">Right</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <ColorField label="Button Color" value={props.buttonColor || props.submitColor || props.backgroundColor || "#178218"} onChange={(event) => updateBlockProps(block.id, { buttonColor: event.target.value })} />
+        <TextStyleGroup
+          title="Button Text"
+          colorLabel="Button Text Color"
+          sizeLabel="Button Text Size"
+          weightLabel="Button Text Weight"
+          color={props.buttonTextColor || props.color || "#ffffff"}
+          size={props.buttonFontSize || props.fontSize || 14}
+          weight={props.buttonFontWeight || "800"}
+          onChange={(patch) => updateBlockProps(block.id, patch)}
+          keys={{ color: "buttonTextColor", size: "buttonFontSize", weight: "buttonFontWeight" }}
+        />
         <div className="grid grid-cols-2 gap-3">
           <InputField label="Form Radius" type="number" value={props.radius || 8} onChange={(event) => updateBlockProps(block.id, { radius: Number(event.target.value) })} />
           <InputField label="Button Radius" type="number" value={props.buttonRadius || 6} onChange={(event) => updateBlockProps(block.id, { buttonRadius: Number(event.target.value) })} />
+        </div>
+        <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+          <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">Button Box</p>
+          <div className="grid grid-cols-2 gap-3">
+            <InputField label="Button Width" value={props.buttonWidth || "100%"} onChange={(event) => updateBlockProps(block.id, { buttonWidth: event.target.value })} />
+            <InputField label="Button Height" type="number" value={props.buttonHeight ?? 44} onChange={(event) => updateBlockProps(block.id, { buttonHeight: Number(event.target.value) })} />
+            <label className="block text-sm font-semibold text-slate-700">
+              Button Align
+              <select value={props.buttonAlign || props.align || "left"} onChange={(event) => updateBlockProps(block.id, { buttonAlign: event.target.value })} className={`mt-2 ${inputClass}`}>
+                <option value="left">Left</option>
+                <option value="center">Center</option>
+                <option value="right">Right</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+          <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">Canvas Spacing</p>
+          <div className="grid grid-cols-2 gap-3">
+            <InputField label="Form Padding" value={props.padding || "20px"} onChange={(event) => updateBlockProps(block.id, { padding: event.target.value })} />
+            <InputField label="Fields Top Gap" type="number" value={props.fieldTopGap ?? 14} onChange={(event) => updateBlockProps(block.id, { fieldTopGap: Number(event.target.value) })} />
+            <InputField label="Field Gap" type="number" value={props.fieldGap ?? 10} onChange={(event) => updateBlockProps(block.id, { fieldGap: Number(event.target.value) })} />
+            <InputField label="Label Gap" type="number" value={props.labelGap ?? 5} onChange={(event) => updateBlockProps(block.id, { labelGap: Number(event.target.value) })} />
+            <InputField label="Button Top Gap" type="number" value={props.buttonTopGap ?? 12} onChange={(event) => updateBlockProps(block.id, { buttonTopGap: Number(event.target.value) })} />
+          </div>
         </div>
         <div>
           <div className="mb-2 flex items-center justify-between">
@@ -4405,6 +5614,56 @@ const BlockEditor = ({ block, updateBlockProps, updateFormField, addFormField, r
         {"collection" in props && (
           <InputField label="Collection Variable" value={props.collection || "products"} onChange={(event) => updateBlockProps(block.id, { collection: event.target.value })} />
         )}
+        <div className="grid grid-cols-2 gap-3">
+          <ColorField label="Background" value={props.formBackgroundColor || "#ffffff"} onChange={(event) => updateBlockProps(block.id, { formBackgroundColor: event.target.value })} />
+          <ColorField label="Border Color" value={props.borderColor || "#e2e8f0"} onChange={(event) => updateBlockProps(block.id, { borderColor: event.target.value })} />
+        </div>
+        <TextStyleGroup
+          title="Title Text"
+          colorLabel="Title Color"
+          sizeLabel="Title Size"
+          weightLabel="Title Weight"
+          color={props.titleColor || "#020617"}
+          size={props.titleSize || 18}
+          weight={props.titleWeight || "800"}
+          onChange={(patch) => updateBlockProps(block.id, patch)}
+          keys={{ color: "titleColor", size: "titleSize", weight: "titleWeight" }}
+        />
+        <TextStyleGroup
+          title="Description Text"
+          colorLabel="Description Color"
+          sizeLabel="Description Size"
+          weightLabel="Description Weight"
+          color={props.descriptionColor || props.textColor || "#64748b"}
+          size={props.descriptionSize || props.textSize || 14}
+          weight={props.descriptionWeight || props.textWeight || "400"}
+          onChange={(patch) => updateBlockProps(block.id, patch)}
+          keys={{ color: "descriptionColor", size: "descriptionSize", weight: "descriptionWeight" }}
+        />
+        <ColorField label="Input Background" value={props.inputBackgroundColor || "#f8fafc"} onChange={(event) => updateBlockProps(block.id, { inputBackgroundColor: event.target.value })} />
+        <TextStyleGroup
+          title="Input Text"
+          colorLabel="Input Text Color"
+          sizeLabel="Input Text Size"
+          weightLabel="Input Text Weight"
+          color={props.inputTextColor || "#64748b"}
+          size={props.inputFontSize || 14}
+          weight={props.inputFontWeight || "600"}
+          onChange={(patch) => updateBlockProps(block.id, patch)}
+          keys={{ color: "inputTextColor", size: "inputFontSize", weight: "inputFontWeight" }}
+        />
+        <ColorField label="Button Color" value={props.buttonColor || props.submitColor || props.backgroundColor || "#178218"} onChange={(event) => updateBlockProps(block.id, { buttonColor: event.target.value })} />
+        <TextStyleGroup
+          title="Button Text"
+          colorLabel="Button Text Color"
+          sizeLabel="Button Text Size"
+          weightLabel="Button Text Weight"
+          color={props.buttonTextColor || props.color || "#ffffff"}
+          size={props.buttonFontSize || props.fontSize || 14}
+          weight={props.buttonFontWeight || "800"}
+          onChange={(patch) => updateBlockProps(block.id, patch)}
+          keys={{ color: "buttonTextColor", size: "buttonFontSize", weight: "buttonFontWeight" }}
+        />
         <label className="block text-sm font-semibold text-slate-700">
           Props JSON
           <textarea
@@ -4436,6 +5695,28 @@ const BlockEditor = ({ block, updateBlockProps, updateFormField, addFormField, r
           <ColorField label="Background" value={props.backgroundColor || "#f8fafc"} onChange={(event) => updateBlockProps(block.id, { backgroundColor: event.target.value })} />
           <ColorField label="Text Color" value={props.textColor || "#64748b"} onChange={(event) => updateBlockProps(block.id, { textColor: event.target.value })} />
         </div>
+        <TextStyleGroup
+          title="Title Text"
+          colorLabel="Title Color"
+          sizeLabel="Title Size"
+          weightLabel="Title Weight"
+          color={props.titleColor || props.textColor || "#0f172a"}
+          size={props.titleSize || 20}
+          weight={props.titleWeight || "800"}
+          onChange={(patch) => updateBlockProps(block.id, patch)}
+          keys={{ color: "titleColor", size: "titleSize", weight: "titleWeight" }}
+        />
+        <TextStyleGroup
+          title="Body Text"
+          colorLabel="Body Color"
+          sizeLabel="Body Size"
+          weightLabel="Body Weight"
+          color={props.textColor || "#64748b"}
+          size={props.textSize || 14}
+          weight={props.textWeight || "400"}
+          onChange={(patch) => updateBlockProps(block.id, patch)}
+          keys={{ color: "textColor", size: "textSize", weight: "textWeight" }}
+        />
         <InputField label="Radius" type="number" value={props.radius || 8} onChange={(event) => updateBlockProps(block.id, { radius: Number(event.target.value) })} />
         <InputField label="Padding" value={props.padding || "18px"} onChange={(event) => updateBlockProps(block.id, { padding: event.target.value })} />
         <InputField label="Border" value={props.border || "1px solid #e5e7eb"} onChange={(event) => updateBlockProps(block.id, { border: event.target.value })} />
@@ -4518,6 +5799,17 @@ const BlockEditor = ({ block, updateBlockProps, updateFormField, addFormField, r
             <InputField label="Price" value={props.price || ""} onChange={(event) => updateBlockProps(block.id, { price: event.target.value })} />
           </>
         )}
+        <TextStyleGroup
+          title="Text Style"
+          colorLabel="Text Color"
+          sizeLabel="Text Size"
+          weightLabel="Text Weight"
+          color={props.textColor || "#0f172a"}
+          size={props.textSize || props.fontSize || 14}
+          weight={props.textWeight || props.fontWeight || "600"}
+          onChange={(patch) => updateBlockProps(block.id, patch)}
+          keys={{ color: "textColor", size: "textSize", weight: "textWeight" }}
+        />
       </div>
     );
   }
@@ -4543,6 +5835,28 @@ const BlockEditor = ({ block, updateBlockProps, updateFormField, addFormField, r
           </>
         )}
         {block.type === "countdown" && <InputField label="Date" value={props.date || ""} onChange={(event) => updateBlockProps(block.id, { date: event.target.value })} />}
+        <TextStyleGroup
+          title="Title Text"
+          colorLabel="Title Color"
+          sizeLabel="Title Size"
+          weightLabel="Title Weight"
+          color={props.titleColor || props.textColor || "#0f172a"}
+          size={props.titleSize || props.fontSize || 16}
+          weight={props.titleWeight || props.fontWeight || "800"}
+          onChange={(patch) => updateBlockProps(block.id, patch)}
+          keys={{ color: "titleColor", size: "titleSize", weight: "titleWeight" }}
+        />
+        <TextStyleGroup
+          title="Body Text"
+          colorLabel="Body Color"
+          sizeLabel="Body Size"
+          weightLabel="Body Weight"
+          color={props.textColor || "#64748b"}
+          size={props.textSize || 14}
+          weight={props.textWeight || "400"}
+          onChange={(patch) => updateBlockProps(block.id, patch)}
+          keys={{ color: "textColor", size: "textSize", weight: "textWeight" }}
+        />
       </div>
     );
   }
@@ -4555,7 +5869,37 @@ const BlockEditor = ({ block, updateBlockProps, updateFormField, addFormField, r
     return <ColorField label="Color" value={props.color || "#e5e7eb"} onChange={(event) => updateBlockProps(block.id, { color: event.target.value })} />;
   }
 
-  return <p className="text-sm text-slate-500">This block has no settings.</p>;
+  return (
+    <div className="grid gap-3">
+      <InputField label="Title" value={props.title || props.label || ""} onChange={(event) => updateBlockProps(block.id, { title: event.target.value, label: event.target.value })} />
+      <label className="block text-sm font-semibold text-slate-700">
+        Text
+        <textarea value={props.text || props.description || ""} onChange={(event) => updateBlockProps(block.id, { text: event.target.value, description: event.target.value })} rows={3} className={`mt-2 ${inputClass}`} />
+      </label>
+      <TextStyleGroup
+        title="Title Text"
+        colorLabel="Title Color"
+        sizeLabel="Title Size"
+        weightLabel="Title Weight"
+        color={props.titleColor || props.textColor || "#0f172a"}
+        size={props.titleSize || props.fontSize || 16}
+        weight={props.titleWeight || props.fontWeight || "800"}
+        onChange={(patch) => updateBlockProps(block.id, patch)}
+        keys={{ color: "titleColor", size: "titleSize", weight: "titleWeight" }}
+      />
+      <TextStyleGroup
+        title="Body Text"
+        colorLabel="Body Color"
+        sizeLabel="Body Size"
+        weightLabel="Body Weight"
+        color={props.textColor || "#64748b"}
+        size={props.textSize || 14}
+        weight={props.textWeight || "400"}
+        onChange={(patch) => updateBlockProps(block.id, patch)}
+        keys={{ color: "textColor", size: "textSize", weight: "textWeight" }}
+      />
+    </div>
+  );
 };
 
 const LegacyRawTemplateForm = ({ rawTemplate, updateRawField }) => (

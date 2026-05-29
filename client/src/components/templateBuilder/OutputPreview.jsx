@@ -50,7 +50,7 @@ const OutputPreview = ({
   };
 
   const frameClass = previewViewport === "mobile"
-    ? "mx-auto h-[520px] w-[375px] max-w-full bg-white"
+    ? "mx-auto h-[640px] w-[390px] max-w-full rounded bg-white shadow-sm"
     : "h-[420px] w-full bg-white xl:h-[520px]";
   const tabs = ["html", "amp", "formHtml"];
   const tabLabel = (tab) => {
@@ -110,11 +110,13 @@ const OutputPreview = ({
             ))}
           </div>
         ) : (
+          <div className={previewViewport === "mobile" ? "bg-[#f4f6f9] p-3" : ""}>
           <iframe
             title="Generated output preview"
             srcDoc={renderedPreviewMarkup}
             className={`${frameClass} block`}
           />
+          </div>
         )}
 
         {!previewMarkup && (
