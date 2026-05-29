@@ -105,6 +105,7 @@ const CanvasBlock = ({
         <Tag
           contentEditable
           suppressContentEditableWarning
+          onInput={(event) => updateBlockProps(block.id, { text: event.currentTarget.textContent })}
           onBlur={(event) => updateBlockProps(block.id, { text: event.currentTarget.textContent })}
           style={{
             margin: block.type === "heading" ? "0 0 10px" : "0 0 14px",
@@ -137,6 +138,7 @@ const CanvasBlock = ({
         <span
           contentEditable
           suppressContentEditableWarning
+          onInput={(event) => updateBlockProps(block.id, { text: event.currentTarget.textContent })}
           onBlur={(event) => updateBlockProps(block.id, { text: event.currentTarget.textContent })}
           className="inline-block font-bold"
           style={{

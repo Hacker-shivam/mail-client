@@ -278,6 +278,148 @@ const predefinedTemplates = [
         { id: "footer-event", type: "footer", props: { unsubscribe: true } }
       ]
     }
+  },
+  {
+    category: "Designs",
+    name: "Acolyte Living",
+    slug: "acolyte-living",
+    subject: "Now open for January intake students",
+    sourceJson: {
+      ...starterSource,
+      theme: {
+        ...starterSource.theme,
+        primaryColor: "#1f2937",
+        backgroundColor: "#f8fafc",
+        contentColor: "#ffffff",
+        textColor: "#0f172a",
+        mutedColor: "#475569",
+        fontFamily: "Inter, system-ui, sans-serif"
+      },
+      blocks: [
+        {
+          id: "acolyte-hero-image",
+          type: "image",
+          props: {
+            src: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=600&q=80",
+            alt: "Acolyte Living Student Accommodation",
+            width: 600,
+            height: "auto",
+            mobileWidth: 320,
+            mobileHeight: "auto",
+            href: "{{formHtmlUrl}}",
+            display: "block",
+            maxWidth: "100%",
+            style: "display: block; width: 100%; max-width: 600px; height: auto; margin: 0 auto;",
+            mobileStyle: "display: block; width: 100%; max-width: 320px; height: auto; margin: 0 auto;"
+          }
+        },
+        {
+          id: "acolyte-hero-title",
+          type: "heading",
+          props: {
+            text: "NOW OPEN FOR JANUARY INTAKE STUDENTS",
+            level: "h1",
+            align: "center",
+            fontSize: 30,
+            color: "#0f172a"
+          }
+        },
+        {
+          id: "acolyte-hero-subtitle",
+          type: "text",
+          props: {
+            text: "Acolyte Living homestays offer award-winning rooms, all bills included, and up to 10% cashback.",
+            align: "center",
+            color: "#334155",
+            fontSize: 16
+          }
+        },
+        {
+          id: "acolyte-highlight-card",
+          type: "card",
+          props: {
+            title: "Premium Student Homestay",
+            text: "Enjoy safe, insured student accommodation with 90 days post-booking guidance and hassle-free support.",
+            backgroundColor: "#ffffff",
+            radius: 16,
+            padding: "26px",
+            textColor: "#334155"
+          }
+        },
+        {
+          id: "acolyte-benefits-title",
+          type: "heading",
+          props: {
+            text: "Additional Benefits",
+            level: "h2",
+            align: "center",
+            fontSize: 24,
+            color: "#0f172a"
+          }
+        },
+        {
+          id: "acolyte-benefits-text",
+          type: "text",
+          props: {
+            text: "Student Safety Insurance up to $50,000 USD + 90 Days Post Booking Guidance.",
+            align: "center",
+            color: "#475569",
+            fontSize: 16
+          }
+        },
+        {
+          id: "acolyte-cta-button",
+          type: "button",
+          props: {
+            text: "SELECT",
+            href: "{{formHtmlUrl}}",
+            backgroundColor: "#047857",
+            color: "#ffffff",
+            radius: 999,
+            padding: "14px 30px",
+            fontSize: 16
+          }
+        },
+        {
+          id: "acolyte-form",
+          type: "form",
+          props: {
+            title: "Your Homestay",
+            description: "Fill in your details below to book your student accommodation.",
+            submitText: "SUBMIT",
+            backgroundColor: "#0f172a",
+            buttonRadius: 999,
+            formWidth: "100%",
+            formMaxWidth: 600,
+            formPadding: "32px",
+            inputPadding: "12px 14px",
+            inputHeight: "40px",
+            inputFontSize: 14,
+            inputBorderRadius: 6,
+            inputBorderColor: "#cbd5e1",
+            inputBackgroundColor: "#ffffff",
+            inputTextColor: "#1e293b",
+            buttonHeight: "44px",
+            buttonPadding: "12px 24px",
+            buttonFontSize: 16,
+            buttonBorderRadius: 6,
+            fields: [
+              { name: "name", label: "Name", type: "text", required: true },
+              { name: "phone", label: "Phone", type: "tel", required: true },
+              { name: "email", label: "Email", type: "email", required: true },
+              { name: "university_country", label: "University / Country", type: "text", required: true }
+            ]
+          }
+        },
+        {
+          id: "acolyte-footer",
+          type: "footer",
+          props: {
+            unsubscribe: true
+          }
+        }
+      ]
+    }
   }
 ];
 
@@ -505,6 +647,36 @@ const blockPresets = {
       ]
     }
   },
+  acolyteLiving: {
+    type: "form",
+    props: {
+      title: "Your Homestay",
+      description: "Fill in your details below to book your student accommodation.",
+      submitText: "SUBMIT",
+      backgroundColor: "#0f172a",
+      buttonRadius: 999,
+      formWidth: "100%",
+      formMaxWidth: 600,
+      formPadding: "32px",
+      inputPadding: "12px 14px",
+      inputHeight: "40px",
+      inputFontSize: 14,
+      inputBorderRadius: 6,
+      inputBorderColor: "#cbd5e1",
+      inputBackgroundColor: "#ffffff",
+      inputTextColor: "#1e293b",
+      buttonHeight: "44px",
+      buttonPadding: "12px 24px",
+      buttonFontSize: 16,
+      buttonBorderRadius: 6,
+      fields: [
+        { name: "name", label: "Name", type: "text", required: true },
+        { name: "phone", label: "Phone", type: "tel", required: true },
+        { name: "email", label: "Email", type: "email", required: true },
+        { name: "university_country", label: "University / Country", type: "text", required: true }
+      ]
+    }
+  },
   divider: {
     type: "divider",
     props: {
@@ -676,7 +848,7 @@ const componentGroups = [
   },
   {
     title: "Designs",
-    items: ["image", "offer", "coupon", "productCard", "pricingCard", "testimonial"]
+    items: ["image", "offer", "coupon", "productCard", "pricingCard", "testimonial", "acolyteLiving"]
   },
   {
     title: "Widgets",
@@ -727,6 +899,8 @@ const componentLabels = {
   nps: "NPS",
   accordion: "Accordion",
   carousel: "Carousel"
+  ,
+  acolyteLiving: "Acolyte Living"
 };
 
 const componentDescriptions = {
@@ -764,6 +938,8 @@ const componentDescriptions = {
   nps: "0-10 score",
   accordion: "FAQ items",
   carousel: "Image slides"
+  ,
+  acolyteLiving: "Accommodation lookup form"
 };
 
 const emptyRawTemplate = {
@@ -1528,7 +1704,7 @@ const TemplateForm = () => {
 
     const timer = setTimeout(() => {
       previewBuilder({ silent: true });
-    }, 500);
+    }, 300);
 
     return () => clearTimeout(timer);
   }, [mode, sourceJson, template.name, template.subject]);
@@ -2291,7 +2467,8 @@ const designSections = [
     title: "Highlights",
     items: [
       { type: "productList", label: "Must-read picks", media: "list" },
-      { type: "testimonial", label: "Customer quote", media: "quote" }
+      { type: "testimonial", label: "Customer quote", media: "quote" },
+      { type: "form", label: "Acolyte Living", media: "list", slug: "acolyte-living" }
     ]
   }
 ];
@@ -2315,7 +2492,15 @@ const DesignGallery = ({ loadTemplate }) => (
                 event.dataTransfer.effectAllowed = "copy";
               }}
               onClick={() => {
-                const template = predefinedTemplates.find((entry) => entry.sourceJson.blocks?.some((block) => block.type === item.type)) || predefinedTemplates[0];
+                let template;
+                if (item.slug) {
+                  template = predefinedTemplates.find((entry) => entry.slug === item.slug);
+                }
+
+                if (!template) {
+                  template = predefinedTemplates.find((entry) => entry.sourceJson.blocks?.some((block) => block.type === item.type)) || predefinedTemplates[0];
+                }
+
                 loadTemplate(template);
               }}
               className="cursor-grab overflow-hidden rounded-md border border-slate-200 bg-white p-2 text-left hover:border-indigo-300 hover:bg-indigo-50 active:cursor-grabbing"
