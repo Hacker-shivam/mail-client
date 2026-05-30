@@ -1,16 +1,92 @@
 import { DEFAULT_THEME, INTERACTIVE_BLOCK_TYPES } from "./schema";
 import { interpolateVariables } from "./variables";
 
+const DEFAULT_FORM_AMP_URL = "https://example.com/amp-form-submit";
+
 const escapeHtml = (value = "") => String(value)
   .replace(/&/g, "&amp;")
   .replace(/</g, "&lt;")
   .replace(/>/g, "&gt;")
   .replace(/"/g, "&quot;");
 
+const stripImportant = (value = "") => String(value).replace(/\s*!important\s*/gi, "");
+
 const css = (styles = {}) => Object.entries(styles)
   .filter(([, value]) => value !== undefined && value !== null && value !== "")
-  .map(([key, value]) => `${key}:${value}`)
+  .map(([key, value]) => `${key}:${stripImportant(value)}`)
   .join(";");
+
+const removeMediaFeatureBlocks = (value = "", feature = "prefers-color-scheme") => {
+  let output = "";
+  let index = 0;
+  const lowerValue = String(value).toLowerCase();
+  const lowerFeature = feature.toLowerCase();
+
+  while (index < value.length) {
+    const mediaIndex = lowerValue.indexOf("@media", index);
+
+    if (mediaIndex === -1) {
+      output += value.slice(index);
+      break;
+    }
+
+    const openIndex = value.indexOf("{", mediaIndex);
+
+    if (openIndex === -1) {
+      output += value.slice(index);
+      break;
+    }
+
+    const mediaHeader = lowerValue.slice(mediaIndex, openIndex);
+
+    if (!mediaHeader.includes(lowerFeature)) {
+      output += value.slice(index, openIndex + 1);
+      index = openIndex + 1;
+      continue;
+    }
+
+    output += value.slice(index, mediaIndex);
+    let depth = 1;
+    let cursor = openIndex + 1;
+
+    while (cursor < value.length && depth > 0) {
+      if (value[cursor] === "{") {
+        depth += 1;
+      } else if (value[cursor] === "}") {
+        depth -= 1;
+      }
+
+      cursor += 1;
+    }
+
+    index = cursor;
+  }
+
+  return output;
+};
+
+const sanitizeAmpCss = (value = "") => removeMediaFeatureBlocks(String(value), "prefers-color-scheme")
+  .replace(/\s*!important\s*/gi, "");
+
+const sanitizeAmpHtml = (value = "") => String(value)
+  .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
+  .replace(/\s+target=(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+  .replace(/\s*!important\s*/gi, "");
+
+const sanitizeAmpDocument = (value = "") => String(value)
+  .replace(/<html\b[^>]*>/i, '<html ⚡4email data-css-strict>')
+  .replace(/(<style\s+amp-custom\b[^>]*>)([\s\S]*?)(<\/style>)/gi, (_, open, cssText, close) => (
+    `${open}${sanitizeAmpCss(cssText)}${close}`
+  ))
+  .replace(/\s+target=(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+  .replace(/action-xhr=(["'])\s*\{\{\s*formAmpUrl\s*\}\}\s*\1/gi, `action-xhr="${DEFAULT_FORM_AMP_URL}"`)
+  .replace(/action-xhr=(["'])(?!https:\/\/)(.*?)\1/gi, `action-xhr="${DEFAULT_FORM_AMP_URL}"`)
+  .replace(/\s*!important\s*/gi, "");
+
+const ampActionXhr = (value) => {
+  const action = String(value || "").trim();
+  return /^https:\/\//i.test(action) ? action : DEFAULT_FORM_AMP_URL;
+};
 
 const px = (value, fallback) => `${Number(value || fallback)}px`;
 
@@ -55,9 +131,9 @@ const responsiveCss = (width) => `
       .studio-choice-option { display:block; margin:5px 0; }
       .studio-form-button { margin-top:12px; }
       @media only screen and (max-width: 480px) {
-        .studio-page-pad { padding:16px 8px; }
+        .studio-page-pad { padding:0; }
         .studio-canvas { width:100%; max-width:100%; }
-        .studio-block-cell { padding:8px 12px; }
+        .studio-block-cell { padding:0; }
         .studio-title { font-size:clamp(18px, 6.5vw, 28px); line-height:1.25; }
         .studio-body { font-size:clamp(13px, 4vw, 16px); line-height:1.5; }
         .studio-description { font-size:clamp(12px, 3.8vw, 15px); }
@@ -260,7 +336,7 @@ const renderAmpFormBlock = (block, theme) => {
   });
 
   return `
-    <form class="studio-responsive-form" method="post" action-xhr="${escapeHtml(props.actionXhr || "{{formAmpUrl}}")}" style="${css({
+    <form class="studio-responsive-form" method="post" action-xhr="${escapeHtml(ampActionXhr(props.actionXhr || theme.formAmpUrl))}" style="${css({
       background: props.formBackgroundColor || "#ffffff",
       border: `1px solid ${props.borderColor || "#e2e8f0"}`,
       "border-radius": px(props.radius, 12),
@@ -335,12 +411,15 @@ const renderBlock = (block, theme, mode = "html") => {
   }
 
   if (type === "image") {
-    const desktopWidth = Number(props.width || theme.width || 600);
-    return `<div style="text-align:${props.align || "center"};padding:8px 0">
+    return `<div style="${css({
+      "text-align": props.align || "center",
+      padding: props.padding ?? theme.imagePadding ?? "0",
+      "box-sizing": "border-box"
+    })}">
       <span class="studio-image-wrap" style="${css({
-        display: "inline-block",
+        display: "block",
         width: "100%",
-        "max-width": px(desktopWidth, 600)
+        "max-width": "100%"
       })}">
         <img class="studio-fluid-image" src="${escapeHtml(props.src || "")}" alt="${escapeHtml(props.alt || "")}" style="${css({
       width: "100%",
@@ -422,7 +501,7 @@ const renderBlock = (block, theme, mode = "html") => {
   }
 
   if (type === "rawHtml") {
-    return props.html || "";
+    return mode === "amp" ? sanitizeAmpHtml(props.html || "") : (props.html || "");
   }
 
   if (type === "shape") {
@@ -452,14 +531,14 @@ export const renderStudioDocument = (sourceJson = {}) => {
   const blocks = sourceJson.blocks || [];
   const content = blocks.map((block) => `
     <tr>
-      <td class="studio-block-cell" style="padding:${theme.blockPadding || "10px 20px"}">
+      <td class="studio-block-cell" style="padding:${theme.blockPadding ?? "0"}">
         ${renderBlock(block, theme, "html-email")}
       </td>
     </tr>
   `).join("");
   const ampContent = blocks.map((block) => `
     <tr>
-      <td class="studio-block-cell" style="padding:${theme.blockPadding || "10px 20px"}">
+      <td class="studio-block-cell" style="padding:${theme.blockPadding ?? "0"}">
         ${renderBlock(block, theme, "amp")}
       </td>
     </tr>
@@ -477,7 +556,7 @@ ${responsiveCss(theme.width)}
   <body style="margin:0;padding:0;background:${theme.backgroundColor};font-family:${theme.fontFamily};color:${theme.textColor}">
     <table class="studio-outer" role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:${theme.backgroundColor};width:100%">
       <tr>
-        <td class="studio-page-pad" align="center" style="padding:${theme.pagePadding || "40px 12px"}">
+        <td class="studio-page-pad" align="center" style="padding:${theme.pagePadding ?? "0"}">
           <table class="studio-canvas" role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;max-width:${Number(theme.width || 600)}px;background:${theme.contentColor};border:${Number(theme.borderWidth || 0)}px solid ${theme.borderColor || "#e2e8f0"};border-radius:${Number(theme.radius || 0)}px">
             ${content || `<tr><td style="padding:80px 20px;text-align:center;color:${theme.mutedColor}">Blank template</td></tr>`}
           </table>
@@ -487,7 +566,7 @@ ${responsiveCss(theme.width)}
   </body>
 </html>`;
 
-  const amp = `<!doctype html>
+  const amp = sanitizeAmpDocument(`<!doctype html>
 <html ⚡4email data-css-strict>
   <head>
     <meta charset="utf-8" />
@@ -496,13 +575,13 @@ ${responsiveCss(theme.width)}
     <script async custom-template="amp-mustache" src="https://cdn.ampproject.org/v0/amp-mustache-0.2.js"></script>
     <style amp4email-boilerplate>body{visibility:hidden}</style>
     <style amp-custom>
-${responsiveCss(theme.width)}
+${sanitizeAmpCss(responsiveCss(theme.width))}
     </style>
   </head>
   <body style="margin:0;padding:0;background:${theme.backgroundColor};font-family:${theme.fontFamily};color:${theme.textColor}">
     <table class="studio-outer" role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:${theme.backgroundColor};width:100%">
       <tr>
-        <td class="studio-page-pad" align="center" style="padding:${theme.pagePadding || "40px 12px"}">
+        <td class="studio-page-pad" align="center" style="padding:${theme.pagePadding ?? "0"}">
           <table class="studio-canvas" role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;max-width:${Number(theme.width || 600)}px;background:${theme.contentColor};border:${Number(theme.borderWidth || 0)}px solid ${theme.borderColor || "#e2e8f0"};border-radius:${Number(theme.radius || 0)}px">
             ${ampContent || `<tr><td style="padding:80px 20px;text-align:center;color:${theme.mutedColor}">Blank template</td></tr>`}
           </table>
@@ -510,7 +589,7 @@ ${responsiveCss(theme.width)}
       </tr>
     </table>
   </body>
-</html>`;
+</html>`);
 
   const formHtml = `<!doctype html>
 <html ⚡>
@@ -523,7 +602,7 @@ ${responsiveCss(theme.width)}
     <script async custom-template="amp-mustache" src="https://cdn.ampproject.org/v0/amp-mustache-0.2.js"></script>
     <style amp-boilerplate>body{-webkit-animation:-amp-start 8s steps(1,end) 0s 1 normal both;-moz-animation:-amp-start 8s steps(1,end) 0s 1 normal both;-ms-animation:-amp-start 8s steps(1,end) 0s 1 normal both;animation:-amp-start 8s steps(1,end) 0s 1 normal both}@-webkit-keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}@-moz-keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}@-ms-keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}@-o-keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}@keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}</style><noscript><style amp-boilerplate>body{-webkit-animation:none;-moz-animation:none;-ms-animation:none;animation:none}</style></noscript>
     <style amp-custom>
-${responsiveCss(theme.width)}
+${sanitizeAmpCss(responsiveCss(theme.width))}
       body { font-family:${theme.fontFamily}; background:${theme.backgroundColor}; padding:16px; color:${theme.textColor}; box-sizing:border-box; }
       .studio-web-form-shell { max-width:${Number(theme.width || 600)}px; margin:0 auto; }
     </style>

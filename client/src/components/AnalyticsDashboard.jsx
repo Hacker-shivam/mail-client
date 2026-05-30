@@ -3,7 +3,39 @@ import axios from "axios";
 import { apiUrl } from "../api/Api";
 
 const numberFormat = new Intl.NumberFormat("en-IN");
-const percentFormat = (value) => `${Number(value || 0).toFixed(2)}%`;
+const displayText = (value, fallback = "") => {
+  if (value === undefined || value === null) {
+    return fallback;
+  }
+
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    const item = value.find((entry) => entry !== undefined && entry !== null && typeof entry !== "object");
+    return item === undefined ? fallback : String(item);
+  }
+
+  if (typeof value === "object") {
+    if (Array.isArray(value.$ifNull)) {
+      return displayText(value.$ifNull, fallback);
+    }
+
+    if (value.$literal !== undefined) {
+      return displayText(value.$literal, fallback);
+    }
+  }
+
+  return fallback;
+};
+
+const numericValue = (value) => {
+  const nextValue = Number(displayText(value, 0));
+  return Number.isFinite(nextValue) ? nextValue : 0;
+};
+
+const percentFormat = (value) => `${numericValue(value).toFixed(2)}%`;
 
 const panelClass = "rounded-lg border border-[#d8c9a3] bg-[#fffdf7] shadow-[0_1px_2px_rgba(31,24,10,0.05),0_18px_36px_rgba(55,39,12,0.10)]";
 const inputClass = "h-10 rounded-md border border-[#d6c69a] bg-[#fffaf0] px-3 text-sm text-[#1c2541] outline-none transition placeholder:text-[#9a8f78] focus:border-[#b8872f] focus:bg-white focus:ring-2 focus:ring-[#ead7a3]";
@@ -53,9 +85,9 @@ const emptyAnalytics = {
   }
 };
 
-const maxFromRows = (rows, field) => Math.max(...rows.map((row) => Number(row[field] || 0)), 1);
+const maxFromRows = (rows, field) => Math.max(...rows.map((row) => numericValue(row[field])), 1);
 
-const joinText = (...parts) => parts.filter(Boolean).join(" - ");
+const joinText = (...parts) => parts.map((part) => displayText(part)).filter(Boolean).join(" - ");
 
 const SectionHeader = ({ title, subtitle, action }) => (
   <div className="flex flex-col justify-between gap-3 border-b border-[#eadfbd] px-5 py-4 md:flex-row md:items-center">
@@ -84,7 +116,7 @@ const SummaryCard = ({ label, value, detail, tone = "slate" }) => {
         <span className={`h-2.5 w-2.5 rounded-full ${tones[tone] || tones.slate}`} />
       </div>
       <p className="mt-3 text-3xl font-bold tracking-tight text-[#1c2541]">
-        {numberFormat.format(value || 0)}
+        {numberFormat.format(numericValue(value))}
       </p>
       <p className="mt-1 text-sm text-[#70664f]">{detail}</p>
     </div>
@@ -97,11 +129,11 @@ const Bar = ({ label, value, maxValue, color = "bg-[#1c2541]" }) => (
     <div className="h-2 rounded-full bg-[#eadfbd]">
       <div
         className={`h-2 rounded-full ${color}`}
-        style={{ width: `${Math.max((Number(value || 0) / maxValue) * 100, value ? 4 : 0)}%` }}
+        style={{ width: `${Math.max((numericValue(value) / maxValue) * 100, numericValue(value) ? 4 : 0)}%` }}
       />
     </div>
     <span className="text-right text-xs font-semibold text-[#70664f]">
-      {numberFormat.format(value || 0)}
+      {numberFormat.format(numericValue(value))}
     </span>
   </div>
 );
@@ -135,12 +167,12 @@ const Funnel = ({ funnel }) => {
               <p className="text-sm font-semibold text-[#70664f]">{percentFormat(step.rate)}</p>
             </div>
             <p className="mt-3 text-2xl font-bold text-[#1c2541]">
-              {numberFormat.format(step.value || 0)}
+              {numberFormat.format(numericValue(step.value))}
             </p>
             <div className="mt-4 h-2 rounded-full bg-[#eadfbd]">
               <div
                 className={`h-2 rounded-full ${step.color}`}
-                style={{ width: `${Math.min(Number(step.rate || 0), 100)}%` }}
+                style={{ width: `${Math.min(numericValue(step.rate), 100)}%` }}
               />
             </div>
           </div>
@@ -169,8 +201,8 @@ const TimelineChart = ({ rows, mode }) => {
           <p className="rounded-lg bg-[#fff8e8] p-4 text-sm text-[#70664f]">No timeline data available.</p>
         ) : (
           rows.slice(-14).map((row) => (
-            <div key={row.period} className="grid gap-2 rounded-lg border border-[#eadfbd] bg-[#fff8e8] p-3 md:grid-cols-[132px_1fr]">
-              <p className="text-sm font-semibold text-[#70664f]">{row.period}</p>
+            <div key={displayText(row.period, "period")} className="grid gap-2 rounded-lg border border-[#eadfbd] bg-[#fff8e8] p-3 md:grid-cols-[132px_1fr]">
+              <p className="text-sm font-semibold text-[#70664f]">{displayText(row.period, "Unknown")}</p>
               <div className="space-y-2">
                 <Bar label="Opens" value={row.totalOpens} maxValue={maxValue} color="bg-[#4b2e83]" />
                 <Bar label="Clicks" value={row.totalClicks} maxValue={maxValue} color="bg-[#c89b3c]" />
@@ -202,13 +234,13 @@ const PerformanceTable = ({ title, rows, labelKey }) => (
             <tr><td className="py-5 text-[#70664f]" colSpan={8}>No data available.</td></tr>
           ) : rows.map((row) => (
             <tr key={row[labelKey]} className="border-b border-[#f0e6c8] transition hover:bg-[#fff8e8]">
-              <td className="max-w-[220px] truncate py-3 pr-4 font-semibold text-[#1c2541]">{row[labelKey]}</td>
-              <td className="py-3 pr-4 text-[#70664f]">{numberFormat.format(row.sent || 0)}</td>
-              <td className="py-3 pr-4 text-[#70664f]">{numberFormat.format(row.delivered || 0)}</td>
+              <td className="max-w-[220px] truncate py-3 pr-4 font-semibold text-[#1c2541]">{displayText(row[labelKey], "Unknown")}</td>
+              <td className="py-3 pr-4 text-[#70664f]">{numberFormat.format(numericValue(row.sent))}</td>
+              <td className="py-3 pr-4 text-[#70664f]">{numberFormat.format(numericValue(row.delivered))}</td>
               <td className="py-3 pr-4 text-[#70664f]">{percentFormat(row.openRate)}</td>
               <td className="py-3 pr-4 text-[#70664f]">{percentFormat(row.clickThroughRate)}</td>
               <td className="py-3 pr-4 text-[#70664f]">{percentFormat(row.clickToOpenRate)}</td>
-              <td className="py-3 pr-4 text-[#70664f]">{numberFormat.format(row.totalForms || 0)}</td>
+              <td className="py-3 pr-4 text-[#70664f]">{numberFormat.format(numericValue(row.totalForms))}</td>
               <td className="py-3 pr-4 text-[#70664f]">{percentFormat(row.bounceRate)}</td>
             </tr>
           ))}
@@ -228,13 +260,13 @@ const BreakdownList = ({ title, rows }) => {
         {rows.length === 0 ? (
           <p className="text-sm text-[#70664f]">No data available.</p>
         ) : rows.slice(0, 8).map((row) => (
-          <div key={row.name}>
+          <div key={displayText(row.name, "breakdown")}>
             <div className="mb-1 flex items-center justify-between gap-3">
-              <p className="truncate text-sm font-semibold text-[#1c2541]">{row.name}</p>
-              <p className="text-sm font-semibold text-[#70664f]">{numberFormat.format(row.total)}</p>
+              <p className="truncate text-sm font-semibold text-[#1c2541]">{displayText(row.name, "Unknown")}</p>
+              <p className="text-sm font-semibold text-[#70664f]">{numberFormat.format(numericValue(row.total))}</p>
             </div>
             <div className="h-2 rounded-full bg-[#eadfbd]">
-              <div className="h-2 rounded-full bg-[#b8872f]" style={{ width: `${(Number(row.total || 0) / maxValue) * 100}%` }} />
+              <div className="h-2 rounded-full bg-[#b8872f]" style={{ width: `${(numericValue(row.total) / maxValue) * 100}%` }} />
             </div>
           </div>
         ))}
@@ -250,10 +282,10 @@ const LinkAnalytics = ({ rows }) => (
       {rows.length === 0 ? (
         <p className="text-sm text-[#70664f]">No link clicks yet.</p>
       ) : rows.map((row) => (
-          <div key={`${row.url}-${row.domain}`} className="rounded-lg border border-[#eadfbd] bg-[#fff8e8] p-3">
-          <p className="truncate font-semibold text-[#1c2541]">{row.url}</p>
+          <div key={`${displayText(row.url)}-${displayText(row.domain)}`} className="rounded-lg border border-[#eadfbd] bg-[#fff8e8] p-3">
+          <p className="truncate font-semibold text-[#1c2541]">{displayText(row.url, "Unknown URL")}</p>
           <p className="mt-1 text-sm text-[#70664f]">
-            {joinText(row.domain, `${numberFormat.format(row.totalClicks)} clicks`, `${numberFormat.format(row.uniqueClicks)} unique`, `${numberFormat.format(row.botClicks)} suspected bot`)}
+            {joinText(row.domain, `${numberFormat.format(numericValue(row.totalClicks))} clicks`, `${numberFormat.format(numericValue(row.uniqueClicks))} unique`, `${numberFormat.format(numericValue(row.botClicks))} suspected bot`)}
           </p>
         </div>
       ))}
@@ -268,13 +300,13 @@ const FormAnalytics = ({ rows }) => (
       {rows.length === 0 ? (
         <p className="text-sm text-[#70664f]">No form submissions yet.</p>
       ) : rows.map((field) => (
-        <div key={field.field} className="rounded-lg border border-[#eadfbd] bg-[#fff8e8] p-3">
-          <p className="font-semibold text-[#1c2541]">{field.field}</p>
-          <p className="text-sm text-[#70664f]">{numberFormat.format(field.totalResponses)} responses</p>
+        <div key={displayText(field.field, "field")} className="rounded-lg border border-[#eadfbd] bg-[#fff8e8] p-3">
+          <p className="font-semibold text-[#1c2541]">{displayText(field.field, "Unknown field")}</p>
+          <p className="text-sm text-[#70664f]">{numberFormat.format(numericValue(field.totalResponses))} responses</p>
           <div className="mt-2 space-y-1">
             {field.topValues.slice(0, 4).map((item, index) => (
               <p key={`${field.field}-${index}`} className="truncate text-xs text-[#70664f]">
-                {joinText(String(item.value || "Blank"), numberFormat.format(item.count))}
+                {joinText(displayText(item.value, "Blank"), numberFormat.format(numericValue(item.count)))}
               </p>
             ))}
           </div>
@@ -291,13 +323,13 @@ const RecipientList = ({ title, rows }) => (
       {rows.length === 0 ? (
         <p className="text-sm text-[#70664f]">No recipients found.</p>
       ) : rows.slice(0, 10).map((row) => (
-        <div key={row.trackingId} className="rounded-lg border border-[#eadfbd] bg-[#fff8e8] p-3 transition hover:bg-[#fffdf7]">
+        <div key={displayText(row.trackingId, displayText(row.email, "recipient"))} className="rounded-lg border border-[#eadfbd] bg-[#fff8e8] p-3 transition hover:bg-[#fffdf7]">
           <div className="flex items-center justify-between gap-3">
-            <p className="truncate font-semibold text-[#1c2541]">{row.email}</p>
-            <p className="rounded-md bg-[#f6ecd5] px-2 py-1 text-xs font-bold text-[#7a1735]">Score {row.score}</p>
+            <p className="truncate font-semibold text-[#1c2541]">{displayText(row.email, "Unknown email")}</p>
+            <p className="rounded-md bg-[#f6ecd5] px-2 py-1 text-xs font-bold text-[#7a1735]">Score {numberFormat.format(numericValue(row.score))}</p>
           </div>
           <p className="mt-1 text-xs text-[#70664f]">
-            {joinText(row.campaignName, `opens ${row.opens}`, `clicks ${row.clicks}`, `forms ${row.forms}`, `bot events ${row.botEvents}`)}
+            {joinText(row.campaignName, `opens ${numberFormat.format(numericValue(row.opens))}`, `clicks ${numberFormat.format(numericValue(row.clicks))}`, `forms ${numberFormat.format(numericValue(row.forms))}`, `bot events ${numberFormat.format(numericValue(row.botEvents))}`)}
           </p>
         </div>
       ))}
@@ -326,14 +358,14 @@ const ReceiverDetails = ({ rows }) => (
           {rows.length === 0 ? (
             <tr><td className="py-5 text-[#70664f]" colSpan={12}>No receiver activity found.</td></tr>
           ) : rows.slice(0, 80).map((receiver) => (
-            <tr key={receiver.trackingId} className="border-b border-[#f0e6c8] align-top transition hover:bg-[#fff8e8]">
+            <tr key={displayText(receiver.trackingId, displayText(receiver.email, "receiver"))} className="border-b border-[#f0e6c8] align-top transition hover:bg-[#fff8e8]">
               <td className="max-w-[220px] py-3 pr-4">
-                <p className="truncate font-semibold text-[#1c2541]">{receiver.email}</p>
-                <p className="text-xs text-[#9a8f78]">Score {receiver.score || 0}</p>
+                <p className="truncate font-semibold text-[#1c2541]">{displayText(receiver.email, "Unknown email")}</p>
+                <p className="text-xs text-[#9a8f78]">Score {numberFormat.format(numericValue(receiver.score))}</p>
               </td>
               <td className="max-w-[180px] py-3 pr-4 text-[#70664f]">
-                <p className="truncate font-semibold">{receiver.campaignName}</p>
-                <p className="truncate text-xs text-[#9a8f78]">{receiver.templateSlug}</p>
+                <p className="truncate font-semibold">{displayText(receiver.campaignName, "Unknown campaign")}</p>
+                <p className="truncate text-xs text-[#9a8f78]">{displayText(receiver.templateSlug)}</p>
               </td>
               <td className="max-w-[180px] py-3 pr-4 text-[#70664f]">
                 <p className="font-semibold text-[#1c2541]">
@@ -347,11 +379,11 @@ const ReceiverDetails = ({ rows }) => (
                       : "No delivery event"}
                 </p>
                 {receiver.bounceReason && (
-                  <p className="mt-1 truncate text-xs text-[#8a2f48]">{receiver.bounceReason}</p>
+                  <p className="mt-1 truncate text-xs text-[#8a2f48]">{displayText(receiver.bounceReason)}</p>
                 )}
               </td>
               <td className="max-w-[220px] py-3 pr-4 text-[#70664f]">
-                <p className="truncate">{receiver.providerStatus || "Unknown"}</p>
+                <p className="truncate">{displayText(receiver.providerStatus, "Unknown")}</p>
                 <p className="truncate text-xs text-[#9a8f78]">
                   {joinText(
                     receiver.deliveryMeta?.statusCode ? `code ${receiver.deliveryMeta.statusCode}` : "",
@@ -361,23 +393,23 @@ const ReceiverDetails = ({ rows }) => (
                 </p>
               </td>
               <td className="py-3 pr-4 text-[#70664f]">
-                <p>{numberFormat.format(receiver.opens || 0)} times</p>
+                <p>{numberFormat.format(numericValue(receiver.opens))} times</p>
                 <p className="text-xs text-[#9a8f78]">{receiver.firstOpenedAt ? new Date(receiver.firstOpenedAt).toLocaleString() : "Not opened"}</p>
               </td>
               <td className="py-3 pr-4 text-[#70664f]">
-                <p>{numberFormat.format(receiver.clicks || 0)} times</p>
+                <p>{numberFormat.format(numericValue(receiver.clicks))} times</p>
                 <p className="text-xs text-[#9a8f78]">{receiver.firstClickedAt ? new Date(receiver.firstClickedAt).toLocaleString() : "No click"}</p>
               </td>
               <td className="py-3 pr-4 text-[#70664f]">
-                <p>{numberFormat.format(receiver.forms || 0)} submits</p>
+                <p>{numberFormat.format(numericValue(receiver.forms))} submits</p>
                 <p className="text-xs text-[#9a8f78]">{receiver.firstFormSubmittedAt ? new Date(receiver.firstFormSubmittedAt).toLocaleString() : "No form"}</p>
               </td>
               <td className="max-w-[160px] py-3 pr-4 text-[#70664f]">
-                <p className="truncate">{receiver.lastLocation || "Unknown"}</p>
-                <p className="truncate text-xs text-[#9a8f78]">{(receiver.locations || []).join(" | ")}</p>
+                <p className="truncate">{displayText(receiver.lastLocation, "Unknown")}</p>
+                <p className="truncate text-xs text-[#9a8f78]">{(receiver.locations || []).map((item) => displayText(item)).filter(Boolean).join(" | ")}</p>
               </td>
-              <td className="py-3 pr-4 text-[#70664f]">{receiver.lastDevice || "Unknown"}</td>
-              <td className="py-3 pr-4 text-[#70664f]">{receiver.lastBrowser || "Unknown"}</td>
+              <td className="py-3 pr-4 text-[#70664f]">{displayText(receiver.lastDevice, "Unknown")}</td>
+              <td className="py-3 pr-4 text-[#70664f]">{displayText(receiver.lastBrowser, "Unknown")}</td>
               <td className="max-w-[240px] py-3 pr-4 text-[#70664f]">
                 {(receiver.clickedLinks || []).length === 0 ? (
                   <span className="text-[#9a8f78]">No links</span>
@@ -385,7 +417,7 @@ const ReceiverDetails = ({ rows }) => (
                   <div className="space-y-1">
                     {(receiver.clickedLinks || []).slice(0, 3).map((link, index) => (
                       <p key={`${receiver.trackingId}-link-${index}`} className="truncate text-xs">
-                        {joinText(link.url, link.clickedAt ? new Date(link.clickedAt).toLocaleString() : "")}
+                        {joinText(displayText(link.url), link.clickedAt ? new Date(link.clickedAt).toLocaleString() : "")}
                       </p>
                     ))}
                   </div>
@@ -399,7 +431,7 @@ const ReceiverDetails = ({ rows }) => (
                     {(receiver.formSubmissions || []).slice(0, 2).map((submission, index) => (
                       <p key={`${receiver.trackingId}-form-${index}`} className="truncate text-xs">
                         {Object.entries(submission.data || {})
-                          .map(([key, value]) => `${key}: ${value}`)
+                          .map(([key, value]) => `${displayText(key)}: ${displayText(value, "Blank")}`)
                           .join(", ")}
                       </p>
                     ))}
@@ -421,16 +453,16 @@ const GmailQuota = ({ rows }) => (
       {rows.length === 0 ? (
         <p className="text-sm text-[#70664f]">No Gmail sender usage yet.</p>
       ) : rows.map((row) => (
-        <div key={row.senderEmail} className="rounded-lg border border-[#eadfbd] bg-[#fff8e8] p-3">
+        <div key={displayText(row.senderEmail, "sender")} className="rounded-lg border border-[#eadfbd] bg-[#fff8e8] p-3">
           <div className="flex items-center justify-between gap-3">
-            <p className="truncate font-semibold text-[#1c2541]">{row.senderEmail}</p>
+            <p className="truncate font-semibold text-[#1c2541]">{displayText(row.senderEmail, "Unknown sender")}</p>
             <p className="text-sm font-semibold text-[#70664f]">{percentFormat(row.usageRate)}</p>
           </div>
           <div className="mt-2 h-2 rounded-full bg-[#eadfbd]">
-            <div className="h-2 rounded-full bg-[#c89b3c]" style={{ width: `${Math.min(row.usageRate || 0, 100)}%` }} />
+            <div className="h-2 rounded-full bg-[#c89b3c]" style={{ width: `${Math.min(numericValue(row.usageRate), 100)}%` }} />
           </div>
           <p className="mt-2 text-xs text-[#70664f]">
-            {joinText(`${numberFormat.format(row.sentToday)} sent today`, `${numberFormat.format(row.remainingToday)} remaining`, `${numberFormat.format(row.dailyLimit)} limit`)}
+            {joinText(`${numberFormat.format(numericValue(row.sentToday))} sent today`, `${numberFormat.format(numericValue(row.remainingToday))} remaining`, `${numberFormat.format(numericValue(row.dailyLimit))} limit`)}
           </p>
         </div>
       ))}
@@ -446,7 +478,7 @@ const BotFiltering = ({ data }) => (
         <div key={key} className="rounded-lg border border-[#eadfbd] bg-[#fff8e8] p-4">
           <p className="font-semibold capitalize text-[#1c2541]">{key}</p>
           <p className="mt-2 text-sm text-[#70664f]">
-            {joinText(`${numberFormat.format(data[key]?.human || 0)} human`, `${numberFormat.format(data[key]?.suspectedBots || 0)} suspected bot`, `${numberFormat.format(data[key]?.total || 0)} total`)}
+            {joinText(`${numberFormat.format(numericValue(data[key]?.human))} human`, `${numberFormat.format(numericValue(data[key]?.suspectedBots))} suspected bot`, `${numberFormat.format(numericValue(data[key]?.total))} total`)}
           </p>
         </div>
       ))}
@@ -469,12 +501,12 @@ const DeliveryProviderDetails = ({ rows }) => {
         {providerRows.length === 0 ? (
           <p className="text-sm text-[#70664f]">No delivery provider events synced yet.</p>
         ) : providerRows.map((receiver) => (
-          <div key={`${receiver.trackingId}-provider`} className="rounded-lg border border-[#eadfbd] bg-[#fff8e8] p-3">
+          <div key={`${displayText(receiver.trackingId, displayText(receiver.email, "receiver"))}-provider`} className="rounded-lg border border-[#eadfbd] bg-[#fff8e8] p-3">
             <div className="flex flex-col justify-between gap-2 md:flex-row md:items-start">
               <div>
-                <p className="font-semibold text-[#1c2541]">{receiver.email}</p>
+                <p className="font-semibold text-[#1c2541]">{displayText(receiver.email, "Unknown email")}</p>
                 <p className="mt-1 text-xs text-[#70664f]">
-                  {joinText(receiver.campaignName, receiver.providerStatus || "Unknown status")}
+                  {joinText(receiver.campaignName, displayText(receiver.providerStatus, "Unknown status"))}
                 </p>
               </div>
               <p className={`rounded-md px-2 py-1 text-xs font-bold ${
@@ -492,7 +524,7 @@ const DeliveryProviderDetails = ({ rows }) => {
               <p className="truncate">{joinText("Peer", receiver.deliveryMeta?.peerAddress || "NA")}</p>
               <p className="truncate">{joinText("TLS", receiver.deliveryMeta?.tlsCipher || "NA")}</p>
               <p className="truncate">{joinText("IP", receiver.deliveryMeta?.ip || "NA")}</p>
-              <p className="truncate">{receiver.deliveryMeta?.responseMessage || receiver.bounceReason || "No response message"}</p>
+              <p className="truncate">{displayText(receiver.deliveryMeta?.responseMessage || receiver.bounceReason, "No response message")}</p>
             </div>
           </div>
         ))}

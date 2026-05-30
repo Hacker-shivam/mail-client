@@ -1,5 +1,26 @@
 import React from "react";
 
+const displayText = (value, fallback = "") => {
+  if (value === undefined || value === null) {
+    return fallback;
+  }
+
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    const item = value.find((entry) => entry !== undefined && entry !== null && typeof entry !== "object");
+    return item === undefined ? fallback : String(item);
+  }
+
+  if (typeof value === "object" && Array.isArray(value.$ifNull)) {
+    return displayText(value.$ifNull, fallback);
+  }
+
+  return fallback;
+};
+
 const SavedTemplates = ({
   listLoading,
   templates,
@@ -42,8 +63,8 @@ const SavedTemplates = ({
         >
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="font-semibold text-slate-800">{item.name}</p>
-              <p className="text-sm text-slate-500">{item.slug}</p>
+              <p className="font-semibold text-slate-800">{displayText(item.name, "Untitled template")}</p>
+              <p className="text-sm text-slate-500">{displayText(item.slug)}</p>
             </div>
             <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600">
               {item.sourceJson ? "Builder" : "Raw"}

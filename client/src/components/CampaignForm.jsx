@@ -16,6 +16,36 @@ const defaultSegment = `{
 
 const schedulerStatuses = ["all", "scheduled", "pending", "running", "paused", "completed", "cancelled", "failed"];
 
+const displayText = (value, fallback = "") => {
+  if (value === undefined || value === null) {
+    return fallback;
+  }
+
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    const item = value.find((entry) => entry !== undefined && entry !== null && typeof entry !== "object");
+    return item === undefined ? fallback : String(item);
+  }
+
+  if (typeof value === "object" && Array.isArray(value.$ifNull)) {
+    return displayText(value.$ifNull, fallback);
+  }
+
+  if (typeof value === "object" && value.$literal !== undefined) {
+    return displayText(value.$literal, fallback);
+  }
+
+  return fallback;
+};
+
+const numericValue = (value) => {
+  const nextValue = Number(displayText(value, 0));
+  return Number.isFinite(nextValue) ? nextValue : 0;
+};
+
 const formatDateTime = (value) => {
   if (!value) {
     return "-";
@@ -329,8 +359,8 @@ const CampaignForm = () => {
                   {templateLoading ? "Loading templates..." : "Default template"}
                 </option>
                 {templates.map((template) => (
-                  <option key={template._id} value={template.slug}>
-                    {template.name}
+                  <option key={template._id} value={displayText(template.slug)}>
+                    {displayText(template.name, "Untitled template")}
                   </option>
                 ))}
               </select>
@@ -502,7 +532,7 @@ const CampaignForm = () => {
                       <option value="">Select contact list</option>
                       {contactLists.map((list) => (
                         <option key={list._id} value={list._id}>
-                          {list.name} ({list.contactCount || 0})
+                          {displayText(list.name, "Untitled list")} ({numericValue(list.contactCount)})
                         </option>
                       ))}
                     </select>
@@ -594,13 +624,13 @@ const CampaignForm = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {preview.sample.map((recipient) => (
-                    <tr key={recipient.email}>
+                  {preview.sample.map((recipient, index) => (
+                    <tr key={displayText(recipient.email, `recipient-${index}`)}>
                       <td className="max-w-[160px] truncate px-3 py-2 text-slate-800">
-                        {recipient.email}
+                        {displayText(recipient.email, "Unknown email")}
                       </td>
                       <td className="max-w-[140px] truncate px-3 py-2 text-slate-500">
-                        {Object.keys(recipient.variables || {}).filter((key) => recipient.variables[key]).join(", ") || "-"}
+                        {Object.keys(recipient.variables || {}).filter((key) => recipient.variables[key]).map((key) => displayText(key)).join(", ") || "-"}
                       </td>
                     </tr>
                   ))}
@@ -738,36 +768,37 @@ const CampaignScheduler = ({
             )}
 
             {!loading && campaigns.map((campaign) => {
-              const canSchedule = ["draft", "scheduled", "pending", "paused"].includes(campaign.status);
-              const canSendNow = ["draft", "scheduled", "paused"].includes(campaign.status);
-              const canPause = ["scheduled", "pending", "running"].includes(campaign.status);
-              const canResume = campaign.status === "paused";
-              const canCancel = ["draft", "scheduled", "pending", "paused"].includes(campaign.status);
-              const progress = campaign.totalRecipients
-                ? Math.round(((campaign.sent || 0) / campaign.totalRecipients) * 100)
+              const campaignStatusValue = displayText(campaign.status, "draft");
+              const canSchedule = ["draft", "scheduled", "pending", "paused"].includes(campaignStatusValue);
+              const canSendNow = ["draft", "scheduled", "paused"].includes(campaignStatusValue);
+              const canPause = ["scheduled", "pending", "running"].includes(campaignStatusValue);
+              const canResume = campaignStatusValue === "paused";
+              const canCancel = ["draft", "scheduled", "pending", "paused"].includes(campaignStatusValue);
+              const progress = numericValue(campaign.totalRecipients)
+                ? Math.round((numericValue(campaign.sent) / numericValue(campaign.totalRecipients)) * 100)
                 : 0;
 
               return (
                 <tr key={campaign._id} className="align-top">
                   <td className="px-4 py-4">
                     <p className="max-w-[220px] truncate font-bold text-slate-900">
-                      {campaign.campaignName}
+                      {displayText(campaign.campaignName, "Untitled campaign")}
                     </p>
                     <p className="max-w-[220px] truncate text-xs text-slate-500">
-                      {campaign.subject || "No subject"}
+                      {displayText(campaign.subject, "No subject")}
                     </p>
                   </td>
                   <td className="px-4 py-4">
                     <p className="max-w-[180px] truncate text-slate-700">
-                      {campaign.senderEmail || "Default"}
+                      {displayText(campaign.senderEmail, "Default")}
                     </p>
                     <p className="max-w-[180px] truncate text-xs text-slate-500">
-                      Reply: {campaign.replyTo || campaign.senderEmail || "Default"}
+                      Reply: {displayText(campaign.replyTo || campaign.senderEmail, "Default")}
                     </p>
                   </td>
                   <td className="px-4 py-4">
-                    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold capitalize ${statusClass(campaign.status)}`}>
-                      {campaign.status}
+                    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold capitalize ${statusClass(campaignStatusValue)}`}>
+                      {campaignStatusValue}
                     </span>
                   </td>
                   <td className="px-4 py-4">
@@ -793,14 +824,14 @@ const CampaignScheduler = ({
                     )}
                   </td>
                   <td className="px-4 py-4 text-slate-700">
-                    {campaign.totalRecipients || 0}
+                    {numericValue(campaign.totalRecipients)}
                   </td>
                   <td className="px-4 py-4">
                     <div className="h-2 w-28 overflow-hidden rounded-full bg-slate-100">
                       <div className="h-full bg-indigo-600" style={{ width: `${progress}%` }} />
                     </div>
                     <p className="mt-1 text-xs text-slate-500">
-                      {campaign.sent || 0} sent / {campaign.failed || 0} failed
+                      {numericValue(campaign.sent)} sent / {numericValue(campaign.failed)} failed
                     </p>
                   </td>
                   <td className="px-4 py-4">

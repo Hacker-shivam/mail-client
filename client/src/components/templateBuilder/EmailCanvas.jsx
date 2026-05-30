@@ -122,7 +122,7 @@ const EmailCanvas = ({
                 overflow: "hidden"
               }}
             >
-              <div style={{ padding: theme.padding || `${Number(theme.contentPadding || 20)}px` }}>
+              <div style={{ padding: theme.padding ?? `${Number(theme.contentPadding || 0)}px` }}>
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleSortEnd}>
                   <SortableContext items={blocks.map((block) => block.id)} strategy={verticalListSortingStrategy}>
                     {!blocks.length ? (
@@ -415,7 +415,7 @@ const BlockRenderer = ({ block, theme, updateBlockProps }) => {
   }
 
   if (block.type === "image") {
-    return <ImageBlock block={block} updateBlockProps={updateBlockProps} />;
+    return <ImageBlock block={block} theme={theme} updateBlockProps={updateBlockProps} />;
   }
 
   if (block.type === "button") {
@@ -744,13 +744,12 @@ const ShapeBlock = ({ block }) => {
   );
 };
 
-const ImageBlock = ({ block, updateBlockProps }) => {
+const ImageBlock = ({ block, theme, updateBlockProps }) => {
   const props = block.props || {};
   const [menuOpen, setMenuOpen] = useState(false);
   const [isImageDragOver, setIsImageDragOver] = useState(false);
   const fileInputId = `image-upload-${block.id}`;
   const isPlaceholder = !props.src || String(props.src).includes("placeholder.com");
-  const width = Number(props.width || 600);
 
   const applyImage = (image) => {
     updateBlockProps(block.id, {
@@ -807,6 +806,9 @@ const ImageBlock = ({ block, updateBlockProps }) => {
       className={`relative flex min-h-56 items-center justify-center overflow-hidden rounded-lg border border-dashed transition ${
         isImageDragOver ? "border-[#0f766e] bg-emerald-50" : "border-slate-300 bg-slate-50"
       }`}
+      style={{
+        padding: props.padding ?? theme.imagePadding ?? "0"
+      }}
     >
       <input id={fileInputId} type="file" accept="image/*" onChange={(event) => applyDroppedFile(event.target.files?.[0])} className="hidden" />
 
@@ -814,9 +816,9 @@ const ImageBlock = ({ block, updateBlockProps }) => {
         <img
           src={props.src}
           alt={props.alt || ""}
-          className="block h-auto max-h-96 w-full object-contain"
+          className="block h-auto w-full object-contain"
           style={{
-            maxWidth: `min(100%, ${width}px)`,
+            maxWidth: "100%",
             width: "100%",
             objectFit: props.objectFit || "contain"
           }}

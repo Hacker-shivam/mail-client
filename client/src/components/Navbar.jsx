@@ -1,6 +1,8 @@
 import React from "react";
 
 const Navbar = ({ pages, activePage, onNavigate }) => {
+  const navPages = pages.filter((page) => page.id !== "overview");
+
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/90 shadow-[0_1px_0_rgba(15,23,42,0.04)] backdrop-blur-xl">
       <div className="mx-auto flex max-w-[1540px] flex-col gap-3 px-3 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between lg:px-8">
@@ -25,7 +27,7 @@ const Navbar = ({ pages, activePage, onNavigate }) => {
 
         <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
           <nav className="premium-scrollbar flex max-w-full gap-1 overflow-x-auto rounded-lg border border-slate-200 bg-slate-100/80 p-1">
-            {pages.map((page) => (
+            {navPages.map((page) => (
               <button
                 key={page.id}
                 type="button"

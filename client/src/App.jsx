@@ -7,15 +7,15 @@ import AnalyticsDashboard from "./components/AnalyticsDashboard";
 const pages = [
   {
     id: "overview",
-    label: "Overview",
-    eyebrow: "Workspace",
-    title: "Campaign Control Room",
-    description: "A premium command surface for email creation, delivery, and performance intelligence.",
+    label: "Home",
+    eyebrow: "Home",
+    title: "Acolyte Campaign Suite",
+    description: "Start from one home page, then move through template creation, campaign delivery, and performance analytics from the navbar.",
     accent: "#0f766e",
     stats: [
-      ["Pages", "4"],
-      ["Flow", "Build - Send - Measure"],
-      ["Workspace", "Unified"]
+      ["Pages", "3"],
+      ["Flow", "Create - Send - Measure"],
+      ["Home", "Ready"]
     ]
   },
   {
@@ -186,29 +186,29 @@ const PageHero = ({ page, activePage, onNavigate }) => {
 
 const OverviewPage = ({ onNavigate }) => {
   const metrics = [
-    { label: "Workspace", value: "4", detail: "Core pages connected" },
-    { label: "Campaign Flow", value: "3", detail: "Build, send, measure" },
-    { label: "Reports", value: "12+", detail: "Operational views" },
-    { label: "Template Modes", value: "2", detail: "Builder and raw HTML" }
+    { label: "Main Pages", value: "3", detail: "Templates, Campaigns, Analytics" },
+    { label: "Campaign Flow", value: "3", detail: "Create, send, measure" },
+    { label: "Preview Modes", value: "2", detail: "Mobile and desktop mail views" },
+    { label: "Outputs", value: "4", detail: "HTML, AMP, form, text" }
   ];
 
   const workflow = [
     {
       step: "01",
-      title: "Design",
-      text: "Template builder, raw HTML, previews, blocks, and validation.",
+      title: "Templates",
+      text: "Build reusable email templates with visual blocks, raw HTML, AMP output, and real mail previews.",
       page: "templates"
     },
     {
       step: "02",
-      title: "Deliver",
-      text: "Recipient imports, sender details, scheduling, and campaign state.",
+      title: "Campaigns",
+      text: "Send single emails or queue bulk campaigns with recipient imports, sender details, and scheduling.",
       page: "campaigns"
     },
     {
       step: "03",
-      title: "Analyze",
-      text: "Funnels, receivers, forms, links, bounces, senders, and CSV exports.",
+      title: "Analytics",
+      text: "Track delivery, opens, clicks, form fills, receivers, devices, links, senders, and CSV exports.",
       page: "analytics"
     }
   ];
@@ -218,15 +218,15 @@ const OverviewPage = ({ onNavigate }) => {
       <section className="rounded-lg border border-slate-200 bg-white shadow-[0_22px_60px_rgba(15,23,42,0.08)]">
         <div className="flex flex-col gap-3 border-b border-slate-100 p-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h2 className="text-xl font-black text-slate-950">Executive Snapshot</h2>
-            <p className="mt-1 text-sm text-slate-500">Stable navigation, clearer hierarchy, and faster daily actions.</p>
+            <h2 className="text-xl font-black text-slate-950">Home Dashboard</h2>
+            <p className="mt-1 text-sm text-slate-500">Use the navbar to open each workspace, or jump from the quick actions below.</p>
           </div>
           <button
             type="button"
             onClick={() => onNavigate("campaigns")}
             className="min-h-11 w-full rounded-md bg-[#0f766e] px-4 py-2.5 text-sm font-black text-white shadow-[0_10px_24px_rgba(15,118,110,0.24)] transition hover:bg-[#115e59] sm:w-auto"
           >
-            Start Campaign
+            Start From Campaigns
           </button>
         </div>
 
@@ -260,8 +260,8 @@ const OverviewPage = ({ onNavigate }) => {
       </section>
 
       <aside className="rounded-lg border border-slate-200 bg-[#0f172a] p-4 text-white shadow-[0_22px_60px_rgba(15,23,42,0.16)] sm:p-5">
-        <p className="text-xs font-black uppercase tracking-[0.22em] text-amber-200">Command Menu</p>
-        <h2 className="mt-3 text-xl font-black">Primary Pages</h2>
+        <p className="text-xs font-black uppercase tracking-[0.22em] text-amber-200">Navbar Pages</p>
+        <h2 className="mt-3 text-xl font-black">Open A Workspace</h2>
         <div className="mt-5 space-y-2">
           {pages.slice(1).map((page) => (
             <button
@@ -282,7 +282,7 @@ const OverviewPage = ({ onNavigate }) => {
         <div className="mt-5 rounded-md border border-white/10 bg-white/[0.04] p-4">
           <p className="text-xs font-black uppercase tracking-wide text-slate-400">UI Status</p>
           <p className="mt-2 text-sm leading-6 text-slate-200">
-            Responsive shell, stable page state, polished spacing, and production build verified.
+            Home is the starting page. Templates, Campaigns, and Analytics live in the navbar.
           </p>
         </div>
       </aside>

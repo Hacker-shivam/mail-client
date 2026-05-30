@@ -52,6 +52,37 @@ const initialTemplate = {
   status: "draft"
 };
 
+const displayText = (value, fallback = "") => {
+  if (value === undefined || value === null) {
+    return fallback;
+  }
+
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    const item = value.find((entry) => entry !== undefined && entry !== null && typeof entry !== "object");
+    return item === undefined ? fallback : String(item);
+  }
+
+  if (typeof value === "object") {
+    if (Array.isArray(value.$ifNull)) {
+      return displayText(value.$ifNull, fallback);
+    }
+
+    if (value.$literal !== undefined) {
+      return displayText(value.$literal, fallback);
+    }
+
+    return fallback;
+  }
+
+  return fallback;
+};
+
+const templateText = (template = {}, key, fallback = "") => displayText(template?.[key], fallback);
+
 const starterSource = {
   version: 1,
   theme: {
@@ -1820,10 +1851,10 @@ const TemplateForm = () => {
       }
 
       setTemplate({
-        name: savedTemplate.name || "",
-        slug: savedTemplate.slug || "",
-        subject: savedTemplate.subject || "",
-        status: savedTemplate.status || "draft"
+        name: templateText(savedTemplate, "name"),
+        slug: templateText(savedTemplate, "slug"),
+        subject: templateText(savedTemplate, "subject"),
+        status: templateText(savedTemplate, "status", "draft")
       });
       syncJson(savedTemplate.sourceJson);
       setSelectedBlockId(savedTemplate.sourceJson.blocks?.[0]?.id || "");
@@ -1849,10 +1880,10 @@ const TemplateForm = () => {
       const restoredTemplate = response.data.template;
 
       setTemplate({
-        name: restoredTemplate.name || "",
-        slug: restoredTemplate.slug || "",
-        subject: restoredTemplate.subject || "",
-        status: restoredTemplate.status || "draft"
+        name: templateText(restoredTemplate, "name"),
+        slug: templateText(restoredTemplate, "slug"),
+        subject: templateText(restoredTemplate, "subject"),
+        status: templateText(restoredTemplate, "status", "draft")
       });
       syncJson(restoredTemplate.sourceJson);
       setSelectedBlockId(restoredTemplate.sourceJson?.blocks?.[0]?.id || "");
@@ -1951,7 +1982,7 @@ const TemplateForm = () => {
       <div className="grid min-h-14 grid-cols-[minmax(260px,320px)_1fr_minmax(360px,auto)] border-b border-[#dde5f0] bg-white">
         <div className="flex min-w-0 items-center gap-3 border-r border-[#dde5f0] px-4">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[#6c4cff] to-[#20c997] text-sm font-black text-white">A</span>
-          <span className="min-w-0 truncate text-sm font-medium text-slate-600">{template.name || "Template"} - 25-05-2026 ...</span>
+          <span className="min-w-0 truncate text-sm font-medium text-slate-600">{templateText(template, "name", "Template")} - 25-05-2026 ...</span>
           <Edit3 size={15} className="shrink-0 text-slate-700" />
         </div>
         <div className="flex items-center justify-center gap-2 border-r border-[#dde5f0] px-3">
@@ -2072,9 +2103,9 @@ const TemplateForm = () => {
                   editorConfig={editorConfig}
                   loadTemplate={(item) => {
                     setTemplate({
-                      name: item.name,
-                      slug: item.slug,
-                      subject: item.subject,
+                      name: templateText(item, "name"),
+                      slug: templateText(item, "slug"),
+                      subject: templateText(item, "subject"),
                       status: template.status || "draft"
                     });
                     syncJson(item.sourceJson);
@@ -2216,7 +2247,7 @@ const SaveTemplateDialog = ({
         <InputField
           name="name"
           label="Template Name"
-          value={template.name || ""}
+          value={templateText(template, "name")}
           onChange={updateTemplateField}
           placeholder="Eligibility campaign"
           required
@@ -2224,14 +2255,14 @@ const SaveTemplateDialog = ({
         <InputField
           name="subject"
           label="Email Subject"
-          value={template.subject || ""}
+          value={templateText(template, "subject")}
           onChange={updateTemplateField}
           placeholder="Check your eligibility"
         />
         <InputField
           name="slug"
           label="Slug"
-          value={template.slug || ""}
+          value={templateText(template, "slug")}
           onChange={updateTemplateField}
           placeholder="eligibility-campaign"
         />
@@ -2469,9 +2500,9 @@ const DesktopEmailBodyStyle = ({ theme, updateTheme, fontOptions }) => (
     <BodyStyleAccordion title="Padding & Dimension">
       <div className="grid gap-4">
         <InputField label="Dimension" type="number" value={theme.width || 600} onChange={(event) => updateTheme("width", Number(event.target.value))} />
-        <InputField label="Block padding" value={theme.blockPadding || "10px 20px"} onChange={(event) => updateTheme("blockPadding", event.target.value)} />
-        <InputField label="Page padding" value={theme.pagePadding || "40px 12px"} onChange={(event) => updateTheme("pagePadding", event.target.value)} />
-        <InputField label="Body padding" value={theme.padding || "20px"} onChange={(event) => updateTheme("padding", event.target.value)} />
+        <InputField label="Block padding" value={theme.blockPadding ?? "0"} onChange={(event) => updateTheme("blockPadding", event.target.value)} />
+        <InputField label="Page padding" value={theme.pagePadding ?? "0"} onChange={(event) => updateTheme("pagePadding", event.target.value)} />
+        <InputField label="Body padding" value={theme.padding ?? "0"} onChange={(event) => updateTheme("padding", event.target.value)} />
         <PaddingControl theme={theme} updateTheme={updateTheme} />
       </div>
     </BodyStyleAccordion>
@@ -2582,7 +2613,7 @@ const PaddingControl = ({ theme, updateTheme }) => (
     <input type="number" value={theme.paddingTop ?? 0} onChange={(event) => updateTheme("paddingTop", Number(event.target.value))} className="h-8 w-10 rounded border border-[#d5deea] text-center" />
     <div />
     <input type="number" value={theme.paddingLeft ?? 0} onChange={(event) => updateTheme("paddingLeft", Number(event.target.value))} className="h-8 w-10 rounded border border-[#d5deea] text-center" />
-    <input type="number" value={theme.contentPadding ?? 20} onChange={(event) => updateTheme("contentPadding", Number(event.target.value))} className="h-8 w-10 rounded border border-[#d5deea] text-center" />
+    <input type="number" value={theme.contentPadding ?? 0} onChange={(event) => updateTheme("contentPadding", Number(event.target.value))} className="h-8 w-10 rounded border border-[#d5deea] text-center" />
     <input type="number" value={theme.paddingRight ?? 0} onChange={(event) => updateTheme("paddingRight", Number(event.target.value))} className="h-8 w-10 rounded border border-[#d5deea] text-center" />
     <div />
     <input type="number" value={theme.paddingBottom ?? 0} onChange={(event) => updateTheme("paddingBottom", Number(event.target.value))} className="h-8 w-10 rounded border border-[#d5deea] text-center" />
@@ -2682,13 +2713,13 @@ const FloatingBlockLibrary = ({
                 <div className="grid gap-2 sm:grid-cols-2">
                   {predefinedTemplates.map((item) => (
                     <button
-                      key={item.slug}
+                      key={templateText(item, "slug", templateText(item, "name", "template"))}
                       type="button"
                       onClick={() => loadTemplate(item)}
                       className="rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm hover:border-[#0f766e]"
                     >
-                      <p className="text-sm font-black text-slate-950">{item.name}</p>
-                      <p className="mt-1 text-xs font-semibold text-slate-500">{item.category}</p>
+                      <p className="text-sm font-black text-slate-950">{templateText(item, "name")}</p>
+                      <p className="mt-1 text-xs font-semibold text-slate-500">{templateText(item, "category")}</p>
                     </button>
                   ))}
                 </div>
@@ -2705,8 +2736,8 @@ const FloatingBlockLibrary = ({
                       onClick={() => loadSavedTemplate(item._id)}
                       className="rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm hover:border-[#0f766e]"
                     >
-                      <p className="text-sm font-black text-slate-950">{item.name}</p>
-                      <p className="mt-1 text-xs font-semibold text-slate-500">{item.slug}</p>
+                      <p className="text-sm font-black text-slate-950">{templateText(item, "name", "Untitled template")}</p>
+                      <p className="mt-1 text-xs font-semibold text-slate-500">{templateText(item, "slug")}</p>
                     </button>
                   ))}
                 </div>
@@ -2957,8 +2988,8 @@ const TemplateStatusMenu = ({
                     : "border-slate-200 bg-white"
                 }`}
               >
-                <span className="block truncate text-sm font-black text-slate-900">{item.name || "Untitled template"}</span>
-                <span className="mt-1 block truncate text-xs font-medium text-slate-500">{item.slug || item.subject || item._id}</span>
+                <span className="block truncate text-sm font-black text-slate-900">{templateText(item, "name", "Untitled template")}</span>
+                <span className="mt-1 block truncate text-xs font-medium text-slate-500">{templateText(item, "slug") || templateText(item, "subject") || item._id}</span>
               </button>
             ))}
           </div>
@@ -2997,6 +3028,7 @@ const CanvasViewSwitch = ({ value, onChange }) => {
 };
 
 const TemplatePreviewWorkspace = ({ mode, setMode, preview, onBack }) => {
+  const [device, setDevice] = useState("mobile");
   const previewMarkup = replaceSampleValues(preview?.[mode] || preview?.html || "");
   const labels = {
     html: "HTML",
@@ -3048,49 +3080,126 @@ const TemplatePreviewWorkspace = ({ mode, setMode, preview, onBack }) => {
         This is a tentative preview and it may vary in certain email clients like Outlook and Yahoo.
       </div>
 
-      <main className="mx-auto grid max-w-[1180px] gap-10 px-4 py-6 lg:grid-cols-[minmax(0,616px)_minmax(0,448px)]">
-        <PreviewDeviceFrame
-          title="600px"
-          icon="desktop"
+      <main className="mx-auto max-w-[1180px] px-4 py-6">
+        <RealMailPreviewSection
+          device={device}
+          setDevice={setDevice}
           markup={previewMarkup}
-          width={616}
-          iframeWidth="100%"
-          height={520}
-        />
-        <PreviewDeviceFrame
-          title="430px"
-          icon="mobile"
-          markup={previewMarkup}
-          width={448}
-          iframeWidth="430px"
-          height={620}
         />
       </main>
     </section>
   );
 };
 
-const PreviewDeviceFrame = ({ title, icon, markup, width, iframeWidth, height }) => (
-  <section className="overflow-hidden border border-[#d8e0ea] bg-white shadow-[0_12px_35px_rgba(15,23,42,0.08)]" style={{ maxWidth: `${width}px` }}>
-    <div className="flex h-14 items-center justify-center gap-3 border-b border-[#d8e0ea] bg-white text-sm font-medium text-slate-800">
-      <span>{icon === "mobile" ? "▯" : "▱"}</span>
-      <span>{title}</span>
-      {icon === "mobile" && <ChevronDown size={15} />}
+const RealMailPreviewSection = ({ device, setDevice, markup }) => {
+  const isMobile = device === "mobile";
+
+  return (
+    <section className="rounded-lg border border-[#d8e0ea] bg-white shadow-[0_16px_44px_rgba(15,23,42,0.10)]">
+      <div className="flex flex-col gap-3 border-b border-[#d8e0ea] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-sm font-black text-slate-950">Real Mail View</h2>
+          <p className="mt-1 text-xs font-medium text-slate-500">
+            Preview the email inside a desktop or mobile mail reader.
+          </p>
+        </div>
+
+        <div className="inline-flex w-full rounded-md border border-[#d8e0ea] bg-slate-50 p-1 sm:w-auto">
+          {["desktop", "mobile"].map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => setDevice(item)}
+              className={`flex-1 rounded px-4 py-2 text-xs font-black capitalize sm:flex-none ${
+                device === item
+                  ? "bg-white text-[#6c4cff] shadow-sm"
+                  : "text-slate-500 hover:bg-white"
+              }`}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-[#edf1f7] p-3 sm:p-6">
+        <div
+          className={`mx-auto overflow-hidden bg-white shadow-[0_20px_60px_rgba(15,23,42,0.18)] ${
+            isMobile
+              ? "max-w-[390px] rounded-[28px] border-[10px] border-slate-950"
+              : "max-w-[960px] rounded-lg border border-slate-200"
+          }`}
+        >
+          <MailChrome device={device} />
+          <iframe
+            title={`${device} real mail preview`}
+            srcDoc={markup}
+            className="block w-full border-0 bg-white"
+            style={{
+              height: isMobile ? "680px" : "640px"
+            }}
+          />
+          {isMobile && (
+            <div className="flex items-center justify-center gap-3 border-t border-slate-200 bg-[#f8eef5] px-4 py-4">
+              <button type="button" className="min-h-10 flex-1 rounded-full bg-[#76586d] px-4 text-sm font-black text-white">
+                Reply
+              </button>
+              <button type="button" className="min-h-10 flex-1 rounded-full bg-[#76586d] px-4 text-sm font-black text-white">
+                Forward
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+};
+
+const MailChrome = ({ device }) => {
+  const isMobile = device === "mobile";
+
+  return (
+    <div className={isMobile ? "bg-[#f8eef5]" : "bg-white"}>
+      {isMobile ? (
+        <>
+          <div className="flex h-9 items-center justify-between px-4 text-xs font-bold text-slate-700">
+            <span>10:42</span>
+            <span>5G+ 55%</span>
+          </div>
+          <div className="flex h-14 items-center justify-between border-b border-[#eadce6] px-4 text-slate-800">
+            <span className="text-2xl leading-none">&larr;</span>
+            <div className="flex items-center gap-5 text-lg">
+              <span>□</span>
+              <span>⌫</span>
+              <span>✉</span>
+              <span>⋮</span>
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="border-b border-slate-200">
+          <div className="flex h-12 items-center gap-3 bg-slate-50 px-4">
+            <span className="h-3 w-3 rounded-full bg-red-400" />
+            <span className="h-3 w-3 rounded-full bg-amber-400" />
+            <span className="h-3 w-3 rounded-full bg-emerald-400" />
+            <div className="ml-3 h-7 flex-1 rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold leading-7 text-slate-500">
+              Mail preview
+            </div>
+          </div>
+          <div className="flex min-h-14 items-center justify-between px-5">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-black text-slate-950">Preview subject</p>
+              <p className="truncate text-xs font-medium text-slate-500">demo@example.com</p>
+            </div>
+            <button type="button" className="rounded-md border border-slate-200 px-3 py-2 text-xs font-black text-slate-600">
+              Reply
+            </button>
+          </div>
+        </div>
+      )}
     </div>
-    <div className="bg-[#f8fafc] p-2">
-      <iframe
-        title={`${title} email preview`}
-        srcDoc={markup}
-        className="mx-auto block border-0 bg-white"
-        style={{
-          width: iframeWidth,
-          maxWidth: "100%",
-          height: `${height}px`
-        }}
-      />
-    </div>
-  </section>
-);
+  );
+};
 
 const LiveCanvasPreview = ({ markup, rawMarkup, mode, viewport }) => {
   const labels = {
@@ -3687,8 +3796,8 @@ const SavedBlockLibrary = ({ savedBlocks, addSavedBlock }) => (
           onClick={() => addSavedBlock(savedBlock)}
           className="w-full cursor-grab rounded-md border border-slate-200 px-3 py-2 text-left hover:border-emerald-400 hover:bg-emerald-50 active:cursor-grabbing"
         >
-          <span className="block text-sm font-semibold text-slate-800">{savedBlock.name}</span>
-          <span className="block text-xs text-slate-500">{savedBlock.type}</span>
+          <span className="block text-sm font-semibold text-slate-800">{displayText(savedBlock.name, "Saved block")}</span>
+          <span className="block text-xs text-slate-500">{displayText(savedBlock.type)}</span>
         </button>
       ))}
     </div>
@@ -3743,31 +3852,31 @@ const TemplateGallery = ({ loadTemplate }) => {
 
       <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 p-2">
         <TemplateMiniPreview sourceJson={activeTemplate.sourceJson} />
-        <p className="mt-2 text-sm font-bold text-slate-900">{activeTemplate.name}</p>
-        <p className="text-xs text-slate-500">{activeTemplate.category}</p>
+        <p className="mt-2 text-sm font-bold text-slate-900">{templateText(activeTemplate, "name")}</p>
+        <p className="text-xs text-slate-500">{templateText(activeTemplate, "category")}</p>
       </div>
 
       <div className="max-h-44 space-y-2 overflow-y-auto pr-1">
         {filteredTemplates.map((item) => (
           <button
-            key={item.slug}
+            key={templateText(item, "slug", templateText(item, "name", "template"))}
             type="button"
             draggable
             onDragStart={(event) => {
-              event.dataTransfer.setData("template/predefined-slug", item.slug);
+              event.dataTransfer.setData("template/predefined-slug", templateText(item, "slug"));
               event.dataTransfer.effectAllowed = "copy";
             }}
             onMouseEnter={() => setActiveTemplate(item)}
             onFocus={() => setActiveTemplate(item)}
             onClick={() => loadTemplate(item)}
             className={`w-full cursor-grab rounded-md border px-3 py-2 text-left active:cursor-grabbing ${
-              activeTemplate.slug === item.slug
+              templateText(activeTemplate, "slug") === templateText(item, "slug")
                 ? "border-emerald-500 bg-emerald-50"
                 : "border-slate-200 bg-white hover:bg-slate-50"
             }`}
           >
-            <span className="block text-sm font-semibold text-slate-800">{item.name}</span>
-            <span className="block text-xs text-slate-500">{item.subject}</span>
+            <span className="block text-sm font-semibold text-slate-800">{templateText(item, "name")}</span>
+            <span className="block text-xs text-slate-500">{templateText(item, "subject")}</span>
           </button>
         ))}
       </div>
@@ -5905,9 +6014,9 @@ const BlockEditor = ({ block, updateBlockProps, updateFormField, addFormField, r
 const LegacyRawTemplateForm = ({ rawTemplate, updateRawField }) => (
   <div className="space-y-5">
     <div className="grid gap-4 md:grid-cols-3">
-      <InputField name="name" value={rawTemplate.name} onChange={updateRawField} placeholder="Template name" required />
-      <InputField name="slug" value={rawTemplate.slug} onChange={updateRawField} placeholder="template-slug" />
-      <InputField name="subject" value={rawTemplate.subject} onChange={updateRawField} placeholder="Subject" />
+      <InputField name="name" value={templateText(rawTemplate, "name")} onChange={updateRawField} placeholder="Template name" required />
+      <InputField name="slug" value={templateText(rawTemplate, "slug")} onChange={updateRawField} placeholder="template-slug" />
+      <InputField name="subject" value={templateText(rawTemplate, "subject")} onChange={updateRawField} placeholder="Subject" />
     </div>
     <textarea name="html" value={rawTemplate.html} onChange={updateRawField} placeholder="HTML email template" required rows={10} className="w-full resize-y rounded-md border border-slate-300 px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
     <textarea name="amp" value={rawTemplate.amp} onChange={updateRawField} placeholder="Optional AMP email template" rows={6} className="w-full resize-y rounded-md border border-slate-300 px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
@@ -5971,8 +6080,8 @@ const LegacySavedTemplates = ({
         >
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="font-semibold text-slate-800">{item.name}</p>
-              <p className="text-sm text-slate-500">{item.slug}</p>
+              <p className="font-semibold text-slate-800">{templateText(item, "name", "Untitled template")}</p>
+              <p className="text-sm text-slate-500">{templateText(item, "slug")}</p>
             </div>
             <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600">
               {item.sourceJson ? "Builder" : "Raw"}
