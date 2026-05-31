@@ -1,14 +1,14 @@
 import React from "react";
 
 const Navbar = ({ pages, activePage, onNavigate }) => {
-  const navPages = pages.filter((page) => page.id !== "overview");
+  const navPages = pages.filter((page) => page.id !== "home");
 
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/90 shadow-[0_1px_0_rgba(15,23,42,0.04)] backdrop-blur-xl">
       <div className="mx-auto flex max-w-[1540px] flex-col gap-3 px-3 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between lg:px-8">
         <button
           type="button"
-          onClick={() => onNavigate("overview")}
+          onClick={() => onNavigate("home")}
           className="group flex min-w-0 items-center gap-3 text-left"
         >
           <span className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[#08111f] text-sm font-black text-white shadow-[0_14px_30px_rgba(15,23,42,0.22)]">

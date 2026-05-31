@@ -900,9 +900,35 @@ const blockPresets = {
     }
   },
   social: {
-    type: "rawHtml",
+    type: "social",
     props: {
-      html: "<p style=\"text-align:center;\"><a href=\"https://facebook.com\">Facebook</a> &nbsp; <a href=\"https://instagram.com\">Instagram</a> &nbsp; <a href=\"https://linkedin.com\">LinkedIn</a></p>"
+      title: "Follow us",
+      align: "center",
+      layout: "icons",
+      padding: "18px",
+      gap: 10,
+      backgroundColor: "#ffffff",
+      iconBackgroundColor: "#0f172a",
+      iconColor: "#ffffff",
+      textColor: "#0f172a",
+      fontSize: 13,
+      iconSize: 18,
+      radius: 999,
+      links: [
+        { label: "Facebook", href: "https://facebook.com", icon: "f", iconKey: "facebook" },
+        { label: "Instagram", href: "https://instagram.com", icon: "ig", iconKey: "instagram" },
+        { label: "LinkedIn", href: "https://linkedin.com", icon: "in", iconKey: "linkedin" },
+        { label: "YouTube", href: "https://youtube.com", icon: "yt", iconKey: "youtube" },
+        { label: "WhatsApp", href: "https://wa.me/", icon: "wa", iconKey: "whatsapp" }
+      ]
+    }
+  },
+  footer: {
+    type: "footer",
+    props: {
+      unsubscribe: true,
+      unsubscribeText: "Unsubscribe",
+      unsubscribeUrl: "{{unsubscribeUrl}}"
     }
   },
   coupon: {
@@ -925,7 +951,7 @@ const componentGroups = [
   },
   {
     title: "Layouts",
-    items: ["hero", "twoColumn", "card"]
+    items: ["hero", "twoColumn", "card", "social", "footer"]
   },
   {
     title: "Designs",
@@ -933,7 +959,7 @@ const componentGroups = [
   },
   {
     title: "Widgets",
-    items: ["social", "rawHtml", "countdown", "accordion", "carousel"]
+    items: ["rawHtml", "countdown", "accordion", "carousel"]
   },
   {
     title: "Forms",
@@ -958,6 +984,7 @@ const componentLabels = {
   offer: "Offer",
   coupon: "Coupon",
   social: "Social",
+  footer: "Unsubscribe",
   rawHtml: "HTML",
   form: "Form",
   leadForm: "Lead",
@@ -997,6 +1024,7 @@ const componentDescriptions = {
   offer: "Promo panel",
   coupon: "Code block",
   social: "Social links",
+  footer: "Unsubscribe link",
   rawHtml: "Custom code",
   form: "Basic fields",
   leadForm: "Lead capture",
@@ -1113,7 +1141,23 @@ const replaceSampleValues = (html = "") => {
   return interpolateVariables(html);
 };
 
+const socialIconOptions = [
+  { value: "facebook", label: "Facebook" },
+  { value: "instagram", label: "Instagram" },
+  { value: "linkedin", label: "LinkedIn" },
+  { value: "youtube", label: "YouTube" },
+  { value: "x", label: "X / Twitter" },
+  { value: "whatsapp", label: "WhatsApp" },
+  { value: "telegram", label: "Telegram" },
+  { value: "tiktok", label: "TikTok" },
+  { value: "threads", label: "Threads" },
+  { value: "email", label: "Email" },
+  { value: "website", label: "Website" },
+  { value: "link", label: "Generic Link" }
+];
+
 const TemplateForm = () => {
+  const [templateWorkspace, setTemplateWorkspace] = useState("gallery");
   const [mode, setMode] = useState("builder");
   const [template, setTemplate] = useState(initialTemplate);
   const [rawTemplate, setRawTemplate] = useState(emptyRawTemplate);
@@ -1228,17 +1272,45 @@ const TemplateForm = () => {
       localWarnings: localValidation.warnings.length
     };
   }, [sourceJson, previewValidation, localValidation]);
-  const builderPayload = (statusOverride = "") => ({
-    name: template.name,
-    slug: template.slug,
-    subject: template.subject,
-    status: statusOverride || template.status || "draft",
-    sourceJson: {
+  const cleanSourceJsonForSave = (document) => ({
+    ...document,
+    blocks: (document.blocks || []).map((block) => {
+      if (!block?.props) {
+        return block;
+      }
+
+      const props = { ...block.props };
+
+      if (props.showDescription === false) {
+        delete props.description;
+      }
+
+      return {
+        ...block,
+        props
+      };
+    })
+  });
+  const builderPayload = (statusOverride = "") => {
+    const payloadSourceJson = cleanSourceJsonForSave({
       ...sourceJson,
       name: template.name,
       subject: template.subject
-    }
-  });
+    });
+    const rendered = renderStudioDocument(payloadSourceJson);
+
+    return {
+      name: template.name,
+      slug: template.slug,
+      subject: template.subject,
+      status: statusOverride || template.status || "draft",
+      html: rendered.html,
+      amp: rendered.amp,
+      formHtml: rendered.formHtml,
+      text: rendered.text,
+      sourceJson: payloadSourceJson
+    };
+  };
   const rawPayload = (statusOverride = "") => ({
     ...rawTemplate,
     status: statusOverride || rawTemplate.status || "draft"
@@ -1706,6 +1778,8 @@ const TemplateForm = () => {
   };
 
   const validateCurrentTemplate = async ({ silent = false } = {}) => {
+    const fallbackValidation = mode === "builder" ? validateStudioDocument(builderPayload().sourceJson) : null;
+
     try {
       setPreviewError("");
       setPreviewLoading(true);
@@ -1733,14 +1807,26 @@ const TemplateForm = () => {
 
       return response.data.validation;
     } catch (error) {
-      const validation = error.response?.data?.validation || null;
-      const message = error.response?.data?.message || "Template validation failed";
+      const responseData = error.response?.data;
+      const validation = responseData?.validation || fallbackValidation;
+      const message = responseData?.message || "Template validation failed";
+
+      console.log("Template validation failed:", {
+        status: error.response?.status,
+        message,
+        response: responseData,
+        fallbackValidation
+      });
 
       setPreviewValidation(validation);
-      setPreviewError(message);
+      setPreviewError(mode === "builder" && fallbackValidation?.valid
+        ? "Backend validation failed, but the local builder document is valid."
+        : message);
 
       if (!silent) {
-        alert(message);
+        alert(mode === "builder" && fallbackValidation?.valid
+          ? "Backend validation failed, but local builder validation passed. You can still save this template."
+          : message);
       }
 
       return validation;
@@ -1775,7 +1861,9 @@ const TemplateForm = () => {
     try {
       setLoading(true);
 
-      const validation = await validateCurrentTemplate({ silent: true });
+      const validation = mode === "builder"
+        ? validateStudioDocument(builderPayload().sourceJson)
+        : await validateCurrentTemplate({ silent: true });
       const nextStatus = mode === "builder"
         ? statusOverride || template.status || "draft"
         : statusOverride || rawTemplate.status || "draft";
@@ -1821,7 +1909,12 @@ const TemplateForm = () => {
       await fetchTemplates();
       window.dispatchEvent(new Event("templates:changed"));
     } catch (error) {
-      console.log(error);
+      console.log("Template save failed:", {
+        status: error.response?.status,
+        message: error.response?.data?.message || error.message,
+        response: error.response?.data,
+        error
+      });
       setPreviewValidation(error.response?.data?.validation || previewValidation);
       alert(error.response?.data?.message || "Template save failed");
     } finally {
@@ -1835,8 +1928,60 @@ const TemplateForm = () => {
     setSelectedBlockId("");
     setPreview(null);
     setMode("builder");
+    setTemplateWorkspace("builder");
     setActiveTemplateId("");
     setVersions([]);
+  };
+
+  const loadPredefinedTemplate = (item) => {
+    if (!item?.sourceJson) {
+      return;
+    }
+
+    setTemplate({
+      name: templateText(item, "name"),
+      slug: templateText(item, "slug"),
+      subject: templateText(item, "subject"),
+      status: "draft"
+    });
+    syncJson(item.sourceJson);
+    selectBlockForEditing(item.sourceJson.blocks?.[0]?.id || "");
+    setActiveTemplateId("");
+    setVersions([]);
+    setPreview(null);
+    setMode("builder");
+    setTemplateWorkspace("builder");
+    setWorkspaceTab("canvas");
+  };
+
+  const loadPresetTemplate = (type) => {
+    const preset = dynamicBlockPresets[type];
+
+    if (!preset) {
+      return;
+    }
+
+    const block = cloneBlock(preset, type);
+    const label = dynamicComponentLabels[type] || type;
+    const nextSourceJson = {
+      ...emptyBuilderSource,
+      blocks: [block]
+    };
+
+    setTemplate({
+      name: `${label} Template`,
+      slug: `${type}-template`,
+      subject: `New ${label} email`,
+      status: "draft"
+    });
+    syncJson(nextSourceJson);
+    selectBlockForEditing(block.id);
+    setActiveTemplateId("");
+    setVersions([]);
+    setPreview(null);
+    setMode("builder");
+    setTemplateWorkspace("builder");
+    setWorkspaceTab("canvas");
   };
 
   const loadSavedTemplate = async (templateId) => {
@@ -1861,6 +2006,7 @@ const TemplateForm = () => {
       setActiveTemplateId(savedTemplate._id);
       await fetchVersions(savedTemplate._id);
       setMode("builder");
+      setTemplateWorkspace("builder");
     } catch (error) {
       console.log(error);
       alert(error.response?.data?.message || "Template load failed");
@@ -1977,6 +2123,17 @@ const TemplateForm = () => {
     );
   }
 
+  if (templateWorkspace === "gallery") {
+    return (
+      <TemplatesHomePage
+        templates={templates}
+        loading={listLoading}
+        onNewTemplate={loadStarter}
+        onLoadSavedTemplate={loadSavedTemplate}
+      />
+    );
+  }
+
   return (
     <section className="w-full max-w-full overflow-hidden border border-[#dde5f0] bg-white shadow-sm">
       <div className="grid min-h-14 grid-cols-[minmax(260px,320px)_1fr_minmax(360px,auto)] border-b border-[#dde5f0] bg-white">
@@ -2007,6 +2164,9 @@ const TemplateForm = () => {
         <div className="flex items-center justify-end gap-2 px-3">
           <button type="button" onClick={loadStarter} className="rounded-md p-2 text-slate-600 hover:bg-slate-50" title="New blank template">
             <FilePlus2 size={19} />
+          </button>
+          <button type="button" onClick={() => setTemplateWorkspace("gallery")} className="rounded-md border border-[#dde5f0] bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            Templates
           </button>
           <button type="button" className="rounded-md p-2 text-slate-600 hover:bg-slate-50" title="Share">
             <Share2 size={18} />
@@ -2101,17 +2261,7 @@ const TemplateForm = () => {
                   removeFormField={removeFormField}
                   saveSelectedBlock={saveSelectedBlock}
                   editorConfig={editorConfig}
-                  loadTemplate={(item) => {
-                    setTemplate({
-                      name: templateText(item, "name"),
-                      slug: templateText(item, "slug"),
-                      subject: templateText(item, "subject"),
-                      status: template.status || "draft"
-                    });
-                    syncJson(item.sourceJson);
-                    selectBlockForEditing(item.sourceJson.blocks?.[0]?.id || "");
-                    setMode("builder");
-                  }}
+                  loadTemplate={loadPredefinedTemplate}
                 />
               </aside>
 
@@ -3661,7 +3811,7 @@ const ComponentLibrary = ({
 }) => {
   const textTypes = ["heading", "text", "textSection"];
   const elementTypes = ["button", "image", "divider", "spacer", "social", "bullet", "number", "table", "card"];
-  const layoutTypes = ["hero", "card", "twoColumn", "productCard", "testimonial", "offer", "productList"];
+  const layoutTypes = ["hero", "card", "twoColumn", "productCard", "testimonial", "offer", "footer", "productList"];
 
   return (
     <div className="space-y-5">
@@ -3767,6 +3917,7 @@ const ElementIcon = ({ type }) => {
     productCard: Image,
     testimonial: AlignJustify,
     offer: MousePointer2,
+    footer: MousePointer2,
     productList: Table2
   };
   const Icon = map[type] || Grid2X2;
@@ -3805,6 +3956,171 @@ const SavedBlockLibrary = ({ savedBlocks, addSavedBlock }) => (
 );
 
 const templateCategories = ["All", ...new Set(predefinedTemplates.map((template) => template.category))];
+
+const TemplatesHomePage = ({
+  templates,
+  loading,
+  onNewTemplate,
+  onLoadSavedTemplate
+}) => {
+  const visibleTemplates = Array.isArray(templates) ? templates : [];
+
+  return (
+    <section className="min-h-[calc(100vh-92px)] rounded-lg border border-slate-200 bg-[#f8fafc] shadow-sm">
+      <div className="border-b border-slate-200 bg-white px-4 py-5 sm:px-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-[#0f766e]">Templates</p>
+            <h1 className="mt-2 text-2xl font-black tracking-normal text-slate-950 sm:text-3xl">
+              Your saved templates
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+              Templates you create and save will appear here as cards. Open one to edit it, or create a new blank template.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={onNewTemplate}
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-md bg-[#0f766e] px-5 py-3 text-sm font-black text-white shadow-[0_14px_30px_rgba(15,118,110,0.24)] transition hover:bg-[#115e59]"
+          >
+            <FilePlus2 size={18} />
+            New Template
+          </button>
+        </div>
+      </div>
+
+      <div className="p-4 sm:p-6">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-black text-slate-950">Template Library</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              {loading ? "Loading your templates..." : `${visibleTemplates.length} saved template${visibleTemplates.length === 1 ? "" : "s"}`}
+            </p>
+          </div>
+        </div>
+
+        {visibleTemplates.length ? (
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            {visibleTemplates.map((item) => (
+              <button
+                key={templateText(item, "_id", templateText(item, "slug", templateText(item, "name", "saved-template")))}
+                type="button"
+                onClick={() => onLoadSavedTemplate(templateText(item, "_id"))}
+                className="group overflow-hidden rounded-lg border border-slate-200 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[#0f766e] hover:shadow-[0_18px_36px_rgba(15,23,42,0.10)]"
+              >
+                <SavedTemplateCardImage template={item} />
+                <div className="p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-base font-black text-slate-950">{templateText(item, "name", "Saved template")}</p>
+                      <p className="mt-1 truncate text-sm text-slate-500">{templateText(item, "subject", "No subject")}</p>
+                    </div>
+                    <span className="shrink-0 rounded-md bg-slate-100 px-2 py-1 text-xs font-black uppercase tracking-wide text-slate-500 group-hover:bg-[#e7f7f5] group-hover:text-[#0f766e]">
+                      Open
+                    </span>
+                  </div>
+                  <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-100 pt-3 text-xs font-bold text-slate-500">
+                    <span className="capitalize">{templateText(item, "status", "draft")}</span>
+                    <span>{templateText(item, "slug", "template")}</span>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="flex min-h-[360px] items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center">
+            <div className="max-w-md">
+              <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-lg bg-[#e7f7f5] text-[#0f766e]">
+                <FilePlus2 size={24} />
+              </span>
+              <h2 className="mt-4 text-xl font-black text-slate-950">No saved templates yet</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-500">
+                Create and save your first template, then it will show here as an image card.
+              </p>
+              <button
+                type="button"
+                onClick={onNewTemplate}
+                className="mt-5 rounded-md bg-[#0f766e] px-5 py-3 text-sm font-black text-white transition hover:bg-[#115e59]"
+              >
+                Create Template
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+};
+
+const findTemplateImage = (blocks = []) => {
+  for (const block of blocks) {
+    if (block?.type === "image" && block.props?.src) {
+      return block.props.src;
+    }
+
+    const nestedBlocks = [
+      ...(Array.isArray(block?.blocks) ? block.blocks : []),
+      ...(Array.isArray(block?.children) ? block.children : []),
+      ...(Array.isArray(block?.props?.blocks) ? block.props.blocks : [])
+    ];
+
+    if (nestedBlocks.length) {
+      const nestedImage = findTemplateImage(nestedBlocks);
+
+      if (nestedImage) {
+        return nestedImage;
+      }
+    }
+  }
+
+  return "";
+};
+
+const extractHtmlImage = (html = "") => {
+  const match = String(html).match(/<img\b[^>]*\bsrc=(?:"([^"]+)"|'([^']+)'|([^\s>]+))/i);
+  return match?.[1] || match?.[2] || match?.[3] || "";
+};
+
+const SavedTemplateCardImage = ({ template }) => {
+  const sourceJson = template?.sourceJson;
+  const imageSrc = templateText(template, "thumbnail")
+    || templateText(template, "previewImage")
+    || templateText(template, "image")
+    || findTemplateImage(sourceJson?.blocks || [])
+    || extractHtmlImage(template?.html);
+
+  if (imageSrc) {
+    return (
+      <div className="aspect-[4/3] overflow-hidden bg-slate-100">
+        <img
+          src={imageSrc}
+          alt={templateText(template, "name", "Template preview")}
+          className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+        />
+      </div>
+    );
+  }
+
+  if (sourceJson) {
+    return (
+      <div className="aspect-[4/3] bg-slate-100 p-3">
+        <TemplateMiniPreview sourceJson={sourceJson} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex aspect-[4/3] items-center justify-center bg-[linear-gradient(135deg,#e7f7f5_0%,#eef2ff_100%)] p-5">
+      <div className="text-center">
+        <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-white text-[#0f766e] shadow-sm">
+          <Library size={22} />
+        </span>
+        <p className="mt-3 text-sm font-black text-slate-700">Template</p>
+      </div>
+    </div>
+  );
+};
 
 const TemplateGallery = ({ loadTemplate }) => {
   const [activeCategory, setActiveCategory] = useState("All");
@@ -4000,6 +4316,10 @@ const ComponentGraphic = ({ type, large = false }) => {
 
   if (type === "social") {
     return <div className={`${base} flex items-center justify-center gap-2`}><span className="h-5 w-5 rounded-full bg-blue-500" /><span className="h-5 w-5 rounded-full bg-pink-500" /><span className="h-5 w-5 rounded-full bg-sky-600" /></div>;
+  }
+
+  if (type === "footer") {
+    return <div className={`${base} flex items-center justify-center`}><div className="text-[10px] font-semibold text-emerald-700 underline">Unsubscribe</div></div>;
   }
 
   if (type === "rawHtml") {
@@ -4362,6 +4682,12 @@ const CanvasBlock = ({
           style={{
             padding: props.padding || "18px",
             backgroundColor: props.formBackgroundColor || "#ffffff",
+            backgroundImage: props.backgroundImageUrl
+              ? `${props.backgroundOverlayColor ? `linear-gradient(${props.backgroundOverlayColor}, ${props.backgroundOverlayColor}), ` : ""}url("${props.backgroundImageUrl}")`
+              : undefined,
+            backgroundSize: props.backgroundImageSize || "cover",
+            backgroundPosition: props.backgroundImagePosition || "center",
+            backgroundRepeat: props.backgroundImageRepeat || "no-repeat",
             borderColor: props.borderColor || "#e2e8f0",
             borderRadius: `${props.radius || 8}px`
           }}
@@ -4420,7 +4746,7 @@ const CanvasBlock = ({
                       width: props.inputWidth || "100%",
                       maxWidth: "100%",
                       textAlign: "left",
-                      color: props.inputTextColor || "#64748b",
+                      color: props.inputLabelColor || props.inputTextColor || "#64748b",
                       fontSize: `${props.inputFontSize || 14}px`,
                       fontWeight: props.inputFontWeight || 600
                     }}
@@ -4437,10 +4763,13 @@ const CanvasBlock = ({
                       borderRadius: `${Number(props.inputRadius ?? 6)}px`,
                       width: props.inputWidth || "100%",
                       maxWidth: "100%",
-                      minHeight: `${Number(props.inputHeight ?? 40)}px`
+                      minHeight: `${Number(props.inputHeight ?? 40)}px`,
+                      color: props.inputValueColor || props.inputTextColor || "#64748b",
+                      fontSize: `${props.inputFontSize || 14}px`,
+                      fontWeight: props.inputFontWeight || 600
                     }}
                   >
-                    <span className="px-3 py-2 text-sm text-slate-400">{field.placeholder || ""}</span>
+                    <span className="block px-3 py-2">{field.placeholder || ""}</span>
                   </div>
                 </div>
               </label>
@@ -4457,7 +4786,10 @@ const CanvasBlock = ({
                       borderRadius: `${Number(props.inputRadius ?? 6)}px`,
                       width: props.inputWidth || "100%",
                       maxWidth: "100%",
-                      minHeight: `${Number(props.inputHeight ?? 40)}px`
+                      minHeight: `${Number(props.inputHeight ?? 40)}px`,
+                      color: props.inputValueColor || props.inputTextColor || "#64748b",
+                      fontSize: `${props.inputFontSize || 14}px`,
+                      fontWeight: props.inputFontWeight || 600
                     }}
                   />
                 </div>
@@ -5514,6 +5846,108 @@ const BlockEditor = ({ block, updateBlockProps, updateFormField, addFormField, r
     );
   }
 
+  if (block.type === "social") {
+    const links = Array.isArray(props.links) ? props.links : [];
+    const updateSocialLink = (index, patch) => {
+      updateBlockProps(block.id, {
+        links: links.map((link, linkIndex) => (
+          linkIndex === index ? { ...link, ...patch } : link
+        ))
+      });
+    };
+    const addSocialLink = () => {
+      updateBlockProps(block.id, {
+        links: [
+          ...links,
+          { label: "Social", href: "https://example.com", icon: "so", iconKey: "link" }
+        ]
+      });
+    };
+    const removeSocialLink = (index) => {
+      updateBlockProps(block.id, {
+        links: links.filter((_, linkIndex) => linkIndex !== index)
+      });
+    };
+
+    return (
+      <div className="grid gap-3">
+        <InputField label="Title" value={props.title || ""} onChange={(event) => updateBlockProps(block.id, { title: event.target.value })} />
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block text-sm font-semibold text-slate-700">
+            Align
+            <select value={props.align || "center"} onChange={(event) => updateBlockProps(block.id, { align: event.target.value })} className={`mt-2 ${inputClass}`}>
+              <option value="left">Left</option>
+              <option value="center">Center</option>
+              <option value="right">Right</option>
+            </select>
+          </label>
+          <label className="block text-sm font-semibold text-slate-700">
+            Layout
+            <select value={props.layout || "icons"} onChange={(event) => updateBlockProps(block.id, { layout: event.target.value })} className={`mt-2 ${inputClass}`}>
+              <option value="icons">Icons</option>
+              <option value="buttons">Buttons</option>
+              <option value="text">Text links</option>
+            </select>
+          </label>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <ColorField label="Section Background" value={props.backgroundColor || "#ffffff"} onChange={(event) => updateBlockProps(block.id, { backgroundColor: event.target.value })} />
+          <ColorField label="Button Background" value={props.iconBackgroundColor || "#0f172a"} onChange={(event) => updateBlockProps(block.id, { iconBackgroundColor: event.target.value })} />
+          <ColorField label="Button Text" value={props.iconColor || "#ffffff"} onChange={(event) => updateBlockProps(block.id, { iconColor: event.target.value })} />
+          <ColorField label="Text Link Color" value={props.textColor || "#0f766e"} onChange={(event) => updateBlockProps(block.id, { textColor: event.target.value })} />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <InputField label="Font Size" type="number" value={props.fontSize || 13} onChange={(event) => updateBlockProps(block.id, { fontSize: Number(event.target.value) })} />
+          <InputField label="Font Weight" value={props.fontWeight || "800"} onChange={(event) => updateBlockProps(block.id, { fontWeight: event.target.value })} />
+          <InputField label="Icon Size" type="number" value={props.iconSize || 18} onChange={(event) => updateBlockProps(block.id, { iconSize: Number(event.target.value) })} />
+          <InputField label="Radius" type="number" value={props.radius ?? 999} onChange={(event) => updateBlockProps(block.id, { radius: Number(event.target.value) })} />
+          <InputField label="Gap" type="number" value={props.gap ?? 10} onChange={(event) => updateBlockProps(block.id, { gap: Number(event.target.value) })} />
+          <InputField label="Padding" value={props.padding || "18px"} onChange={(event) => updateBlockProps(block.id, { padding: event.target.value })} />
+          <InputField label="Item Padding" value={props.itemPadding || "9px 13px"} onChange={(event) => updateBlockProps(block.id, { itemPadding: event.target.value })} />
+        </div>
+
+        <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Social Links</p>
+            <button type="button" onClick={addSocialLink} className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-black text-slate-700">
+              Add
+            </button>
+          </div>
+          <div className="space-y-3">
+            {links.map((link, index) => (
+              <div key={`${link.label || "social"}-${index}`} className="grid gap-2 rounded-md border border-slate-200 bg-white p-3">
+                <div className="grid grid-cols-[minmax(0,1fr)_minmax(120px,0.8fr)] gap-2">
+                  <input value={link.label || ""} onChange={(event) => updateSocialLink(index, { label: event.target.value })} placeholder="Label" className={inputClass} />
+                  <select
+                    value={link.iconKey || "link"}
+                    onChange={(event) => {
+                      const option = socialIconOptions.find((item) => item.value === event.target.value);
+                      updateSocialLink(index, {
+                        iconKey: event.target.value,
+                        label: link.label || option?.label || "Social",
+                        icon: (option?.label || "so").slice(0, 2).toLowerCase()
+                      });
+                    }}
+                    className={inputClass}
+                  >
+                    {socialIconOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <input value={link.href || ""} onChange={(event) => updateSocialLink(index, { href: event.target.value })} placeholder="https://..." className={inputClass} />
+                <button type="button" onClick={() => removeSocialLink(index)} className="justify-self-end rounded-md border border-red-200 px-2 py-1 text-xs font-bold text-red-600">
+                  Remove
+                </button>
+              </div>
+            ))}
+            {!links.length && <p className="text-xs font-semibold text-slate-500">No links yet. Add Facebook, Instagram, LinkedIn, X, YouTube, or any custom URL.</p>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (block.type === "form") {
     return (
       <div className="space-y-4">
@@ -5544,6 +5978,42 @@ const BlockEditor = ({ block, updateBlockProps, updateFormField, addFormField, r
         <div className="grid grid-cols-2 gap-3">
           <ColorField label="Form Background" value={props.formBackgroundColor || "#ffffff"} onChange={(event) => updateBlockProps(block.id, { formBackgroundColor: event.target.value })} />
           <ColorField label="Border Color" value={props.borderColor || "#e2e8f0"} onChange={(event) => updateBlockProps(block.id, { borderColor: event.target.value })} />
+        </div>
+        <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+          <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">Background Image</p>
+          <div className="grid gap-3">
+            <InputField label="Image URL" value={props.backgroundImageUrl || ""} onChange={(event) => updateBlockProps(block.id, { backgroundImageUrl: event.target.value })} placeholder="https://example.com/background.jpg" />
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block text-sm font-semibold text-slate-700">
+                Size
+                <select value={props.backgroundImageSize || "cover"} onChange={(event) => updateBlockProps(block.id, { backgroundImageSize: event.target.value })} className={`mt-2 ${inputClass}`}>
+                  <option value="cover">Cover</option>
+                  <option value="contain">Contain</option>
+                  <option value="auto">Original</option>
+                </select>
+              </label>
+              <label className="block text-sm font-semibold text-slate-700">
+                Position
+                <select value={props.backgroundImagePosition || "center"} onChange={(event) => updateBlockProps(block.id, { backgroundImagePosition: event.target.value })} className={`mt-2 ${inputClass}`}>
+                  <option value="center">Center</option>
+                  <option value="top">Top</option>
+                  <option value="bottom">Bottom</option>
+                  <option value="left">Left</option>
+                  <option value="right">Right</option>
+                </select>
+              </label>
+              <label className="block text-sm font-semibold text-slate-700">
+                Repeat
+                <select value={props.backgroundImageRepeat || "no-repeat"} onChange={(event) => updateBlockProps(block.id, { backgroundImageRepeat: event.target.value })} className={`mt-2 ${inputClass}`}>
+                  <option value="no-repeat">No repeat</option>
+                  <option value="repeat">Repeat</option>
+                  <option value="repeat-x">Repeat X</option>
+                  <option value="repeat-y">Repeat Y</option>
+                </select>
+              </label>
+              <InputField label="Overlay" value={props.backgroundOverlayColor || ""} onChange={(event) => updateBlockProps(block.id, { backgroundOverlayColor: event.target.value })} placeholder="rgba(255,255,255,0.75)" />
+            </div>
+          </div>
         </div>
         <TextStyleGroup
           title="Title Text"
@@ -5593,16 +6063,17 @@ const BlockEditor = ({ block, updateBlockProps, updateFormField, addFormField, r
         />
         <ColorField label="Input Background" value={props.inputBackgroundColor || "#f8fafc"} onChange={(event) => updateBlockProps(block.id, { inputBackgroundColor: event.target.value })} />
         <TextStyleGroup
-          title="Input Text"
-          colorLabel="Input Text Color"
-          sizeLabel="Input Text Size"
-          weightLabel="Input Text Weight"
-          color={props.inputTextColor || "#64748b"}
+          title="Input Label"
+          colorLabel="Label Color"
+          sizeLabel="Label Size"
+          weightLabel="Label Weight"
+          color={props.inputLabelColor || props.inputTextColor || "#64748b"}
           size={props.inputFontSize || 14}
           weight={props.inputFontWeight || "600"}
           onChange={(patch) => updateBlockProps(block.id, patch)}
-          keys={{ color: "inputTextColor", size: "inputFontSize", weight: "inputFontWeight" }}
+          keys={{ color: "inputLabelColor", size: "inputFontSize", weight: "inputFontWeight" }}
         />
+        <ColorField label="Input Box Text Color" value={props.inputValueColor || props.inputTextColor || "#64748b"} onChange={(event) => updateBlockProps(block.id, { inputValueColor: event.target.value })} />
         <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
           <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">Field Box</p>
           <div className="grid grid-cols-2 gap-3">
@@ -5751,16 +6222,17 @@ const BlockEditor = ({ block, updateBlockProps, updateFormField, addFormField, r
         />
         <ColorField label="Input Background" value={props.inputBackgroundColor || "#f8fafc"} onChange={(event) => updateBlockProps(block.id, { inputBackgroundColor: event.target.value })} />
         <TextStyleGroup
-          title="Input Text"
-          colorLabel="Input Text Color"
-          sizeLabel="Input Text Size"
-          weightLabel="Input Text Weight"
-          color={props.inputTextColor || "#64748b"}
+          title="Input Label"
+          colorLabel="Label Color"
+          sizeLabel="Label Size"
+          weightLabel="Label Weight"
+          color={props.inputLabelColor || props.inputTextColor || "#64748b"}
           size={props.inputFontSize || 14}
           weight={props.inputFontWeight || "600"}
           onChange={(patch) => updateBlockProps(block.id, patch)}
-          keys={{ color: "inputTextColor", size: "inputFontSize", weight: "inputFontWeight" }}
+          keys={{ color: "inputLabelColor", size: "inputFontSize", weight: "inputFontWeight" }}
         />
+        <ColorField label="Input Box Text Color" value={props.inputValueColor || props.inputTextColor || "#64748b"} onChange={(event) => updateBlockProps(block.id, { inputValueColor: event.target.value })} />
         <ColorField label="Button Color" value={props.buttonColor || props.submitColor || props.backgroundColor || "#178218"} onChange={(event) => updateBlockProps(block.id, { buttonColor: event.target.value })} />
         <TextStyleGroup
           title="Button Text"

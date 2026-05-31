@@ -3,6 +3,27 @@ import { interpolateVariables } from "./variables";
 
 const DEFAULT_FORM_AMP_URL = "https://example.com/amp-form-submit";
 
+const SOCIAL_BRAND_ICONS = {
+  facebook: { text: "f", color: "#1877f2" },
+  instagram: { text: "ig", color: "#e4405f" },
+  linkedin: { text: "in", color: "#0a66c2" },
+  youtube: { text: "yt", color: "#ff0000" },
+  x: { text: "x", color: "#000000" },
+  twitter: { text: "x", color: "#000000" },
+  whatsapp: { text: "wa", color: "#25d366" },
+  telegram: { text: "tg", color: "#26a5e4" },
+  tiktok: { text: "tt", color: "#000000" },
+  threads: { text: "@", color: "#000000" },
+  email: { text: "@", color: "#ea4335" },
+  website: { text: "www", color: "#4285f4" },
+  link: { text: "go", color: "#0f766e" }
+};
+
+const getSocialBrandIcon = (link = {}) => {
+  const key = String(link.iconKey || link.label || link.icon || "link").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  return SOCIAL_BRAND_ICONS[key] || SOCIAL_BRAND_ICONS.link;
+};
+
 const escapeHtml = (value = "") => String(value)
   .replace(/&/g, "&amp;")
   .replace(/</g, "&lt;")
@@ -15,6 +36,22 @@ const css = (styles = {}) => Object.entries(styles)
   .filter(([, value]) => value !== undefined && value !== null && value !== "")
   .map(([key, value]) => `${key}:${stripImportant(value)}`)
   .join(";");
+
+const cssUrl = (value = "") => encodeURI(String(value)).replace(/[)"'\\\r\n]/g, "");
+
+const formContainerStyles = (props = {}) => ({
+  background: props.formBackgroundColor || "#ffffff",
+  "background-image": props.backgroundImageUrl
+    ? `${props.backgroundOverlayColor ? `linear-gradient(${props.backgroundOverlayColor}, ${props.backgroundOverlayColor}), ` : ""}url(${cssUrl(props.backgroundImageUrl)})`
+    : "",
+  "background-size": props.backgroundImageUrl ? (props.backgroundImageSize || "cover") : "",
+  "background-position": props.backgroundImageUrl ? (props.backgroundImagePosition || "center") : "",
+  "background-repeat": props.backgroundImageUrl ? (props.backgroundImageRepeat || "no-repeat") : "",
+  border: `1px solid ${props.borderColor || "#e2e8f0"}`,
+  "border-radius": px(props.radius, 12),
+  padding: props.padding || "20px",
+  "text-align": props.align || "left"
+});
 
 const removeMediaFeatureBlocks = (value = "", feature = "prefers-color-scheme") => {
   let output = "";
@@ -173,7 +210,7 @@ const textStyle = (props = {}, theme = {}, scope = "body") => {
 
   if (scope === "input") {
     return css({
-      color: props.inputTextColor || theme.mutedColor || "#64748b",
+      color: props.inputLabelColor || props.inputTextColor || theme.mutedColor || "#64748b",
       "font-size": fontSize(props.inputFontSize, 14, 12),
       "font-weight": props.inputFontWeight || 600
     });
@@ -198,7 +235,7 @@ const renderFields = (props = {}, fields = []) => {
     width: sizeValue(props.inputWidth, "100%"),
     "max-width": "100%",
     "min-height": sizeValue(props.inputHeight, "40px"),
-    color: props.inputTextColor || "#64748b",
+    color: props.inputValueColor || props.inputTextColor || "#64748b",
     "font-size": fontSize(props.inputFontSize, 14, 12),
     "font-weight": props.inputFontWeight || 600,
     "overflow-wrap": "anywhere"
@@ -229,7 +266,7 @@ const renderRealFormFields = (props = {}, fields = [], amp = false) => {
     width: sizeValue(props.inputWidth, "100%"),
     "max-width": "100%",
     "min-height": sizeValue(props.inputHeight, "40px"),
-    color: props.inputTextColor || "#64748b",
+    color: props.inputValueColor || props.inputTextColor || "#64748b",
     "font-size": fontSize(props.inputFontSize, 14, 12),
     "font-weight": props.inputFontWeight || 600
   });
@@ -297,13 +334,7 @@ const renderFormLikeBlock = (block, theme) => {
   });
 
   return `
-    <div class="studio-responsive-form" style="${css({
-      background: props.formBackgroundColor || "#ffffff",
-      border: `1px solid ${props.borderColor || "#e2e8f0"}`,
-      "border-radius": px(props.radius, 12),
-      padding: props.padding || "20px",
-      "text-align": props.align || "left"
-    })}">
+    <div class="studio-responsive-form" style="${css(formContainerStyles(props))}">
       ${showTitle ? `<div class="studio-text studio-title" style="${textStyle(props, theme, "title")};text-align:${props.titleAlign || props.align || "left"};margin-top:${spacingPx(props.titleTopGap, 0)};margin-bottom:${spacingPx(props.titleBottomGap, 0)};padding-left:${spacingPx(props.titleIndent, 0)}">${escapeHtml(interpolateVariables(title))}</div>` : ""}
       ${showDescription ? `<div class="studio-text studio-description" style="${textStyle(props, theme, "description")};text-align:${props.descriptionAlign || props.titleAlign || props.align || "left"}">${escapeHtml(interpolateVariables(description))}</div>` : ""}
       <div class="studio-fields" style="margin-top:${fieldTopGap}">${renderFields(props, fields)}</div>
@@ -336,13 +367,7 @@ const renderAmpFormBlock = (block, theme) => {
   });
 
   return `
-    <form class="studio-responsive-form" method="post" action-xhr="${escapeHtml(ampActionXhr(props.actionXhr || theme.formAmpUrl))}" style="${css({
-      background: props.formBackgroundColor || "#ffffff",
-      border: `1px solid ${props.borderColor || "#e2e8f0"}`,
-      "border-radius": px(props.radius, 12),
-      padding: props.padding || "20px",
-      "text-align": props.align || "left"
-    })}">
+    <form class="studio-responsive-form" method="post" action-xhr="${escapeHtml(ampActionXhr(props.actionXhr || theme.formAmpUrl))}" style="${css(formContainerStyles(props))}">
       ${showTitle ? `<div class="studio-text studio-title" style="${textStyle(props, theme, "title")};text-align:${props.titleAlign || props.align || "left"};margin-top:${spacingPx(props.titleTopGap, 0)};margin-bottom:${spacingPx(props.titleBottomGap, 0)};padding-left:${spacingPx(props.titleIndent, 0)}">${escapeHtml(interpolateVariables(title))}</div>` : ""}
       ${showDescription ? `<div class="studio-text studio-description" style="${textStyle(props, theme, "description")};text-align:${props.descriptionAlign || props.titleAlign || props.align || "left"}">${escapeHtml(interpolateVariables(description))}</div>` : ""}
       <div class="studio-fields" style="margin-top:${fieldTopGap}">${renderRealFormFields(props, fields, true)}</div>
@@ -394,13 +419,13 @@ const renderBlock = (block, theme, mode = "html") => {
   if (type === "button") {
     return `<div style="text-align:${props.align || "center"};padding:12px 0"><a class="studio-responsive-button" href="${escapeHtml(props.href || props.url || "{{formHtmlUrl}}")}" style="${css({
       display: "inline-block",
-      background: props.backgroundColor || theme.buttonColor || theme.primaryColor || "#0f766e",
-      color: props.color || theme.buttonTextColor || "#ffffff",
-      "font-size": fontSize(props.fontSize || theme.buttonFontSize, 16, 13),
-      "font-weight": props.fontWeight || 800,
+      background: props.buttonColor || props.submitColor || props.backgroundColor || theme.buttonColor || theme.primaryColor || "#0f766e",
+      color: props.buttonTextColor || props.color || theme.buttonTextColor || "#ffffff",
+      "font-size": fontSize(props.buttonFontSize || props.fontSize || theme.buttonFontSize, 16, 13),
+      "font-weight": props.buttonFontWeight || props.fontWeight || 800,
       "line-height": props.lineHeight || 1.2,
-      "border-radius": px(props.radius || theme.buttonRadius, 8),
-      padding: props.padding || theme.buttonPadding || "13px 22px",
+      "border-radius": px(props.buttonRadius || props.radius || theme.buttonRadius, 8),
+      padding: props.buttonPadding || props.padding || theme.buttonPadding || "13px 22px",
       width: sizeValue(props.width || props.buttonWidth, ""),
       "max-width": "100%",
       "min-height": sizeValue(props.height || props.buttonHeight, ""),
@@ -430,6 +455,73 @@ const renderBlock = (block, theme, mode = "html") => {
       "object-fit": props.objectFit || "contain"
     })}" />
       </span>
+    </div>`;
+  }
+
+  if (type === "social") {
+    const links = Array.isArray(props.links) ? props.links : [];
+    const visibleLinks = links.filter((link) => link?.label || link?.href);
+    const title = props.title
+      ? `<div class="studio-text studio-title" style="${css({
+        color: props.titleColor || props.textColor || theme.textColor || "#0f172a",
+        "font-size": fontSize(props.titleSize, 16, 13),
+        "font-weight": props.titleWeight || 800,
+        "line-height": 1.3,
+        "text-align": props.align || "center",
+        margin: `0 0 ${spacingPx(props.titleGap, 12)}`
+      })}">${escapeHtml(interpolateVariables(props.title))}</div>`
+      : "";
+
+    const layout = props.layout || "icons";
+    const itemStyle = (brand) => css({
+      display: "inline-block",
+      background: layout === "text"
+        ? "transparent"
+        : (props.useBrandColors === false ? (props.iconBackgroundColor || props.backgroundColor || theme.primaryColor || "#0f172a") : brand.color),
+      color: layout === "text" ? (props.textColor || theme.primaryColor || "#0f766e") : (props.iconColor || "#ffffff"),
+      "border-radius": layout === "text" ? "0" : px(props.radius, 999),
+      padding: layout === "text" ? "0" : (props.itemPadding || "9px 13px"),
+      "font-size": fontSize(props.fontSize, 13, 11),
+      "font-weight": props.fontWeight || 800,
+      "line-height": 1.2,
+      "text-decoration": layout === "text" ? "underline" : "none",
+      "box-sizing": "border-box",
+      "min-width": layout === "icons" ? sizeValue(props.iconSize, "38px") : "",
+      "text-align": "center"
+    });
+
+    return `<div style="${css({
+      background: props.backgroundColor || "transparent",
+      padding: props.padding || "18px",
+      "text-align": props.align || "center"
+    })}">
+      ${title}
+      <div>
+        ${visibleLinks.map((link, index) => {
+          const brand = getSocialBrandIcon(link);
+          const label = escapeHtml(link.label || link.icon || "Link");
+          const iconSize = sizeValue(props.iconSize, "18px");
+          const iconText = escapeHtml(link.icon || brand.text || label.slice(0, 2).toLowerCase());
+          const iconBadge = `<span aria-hidden="true" style="${css({
+            display: "inline-block",
+            width: iconSize,
+            height: iconSize,
+            "min-width": iconSize,
+            "border-radius": "999px",
+            background: layout === "text" ? (brand.color || props.textColor || theme.primaryColor || "#0f766e") : "transparent",
+            color: layout === "text" ? "#ffffff" : "inherit",
+            "font-size": fontSize(props.iconTextSize, 11, 9),
+            "font-weight": 900,
+            "line-height": iconSize,
+            "text-align": "center",
+            "vertical-align": "middle",
+            "font-family": "Arial, sans-serif",
+            "text-transform": "lowercase"
+          })}">${iconText}</span>`;
+          const text = layout === "icons" ? iconBadge : `${iconBadge}<span style="vertical-align:middle;margin-left:6px">${label}</span>`;
+          return `<a href="${escapeHtml(link.href || "#")}" aria-label="${label}" style="${itemStyle(brand)};margin:${index === 0 ? "0" : `0 0 0 ${spacingPx(props.gap, 10)}`}">${text}</a>`;
+        }).join("")}
+      </div>
     </div>`;
   }
 

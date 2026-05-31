@@ -44,6 +44,27 @@ const imageGallery = [
   }
 ];
 
+const socialBrandIcons = {
+  facebook: { text: "f", color: "#1877f2" },
+  instagram: { text: "ig", color: "#e4405f" },
+  linkedin: { text: "in", color: "#0a66c2" },
+  youtube: { text: "yt", color: "#ff0000" },
+  x: { text: "x", color: "#000000" },
+  twitter: { text: "x", color: "#000000" },
+  whatsapp: { text: "wa", color: "#25d366" },
+  telegram: { text: "tg", color: "#26a5e4" },
+  tiktok: { text: "tt", color: "#000000" },
+  threads: { text: "@", color: "#000000" },
+  email: { text: "@", color: "#ea4335" },
+  website: { text: "www", color: "#4285f4" },
+  link: { text: "go", color: "#0f766e" }
+};
+
+const getSocialBrandIcon = (link = {}) => {
+  const key = String(link.iconKey || link.label || link.icon || "link").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  return socialBrandIcons[key] || socialBrandIcons.link;
+};
+
 const viewportWidths = {
   desktop: 760,
   email: 640,
@@ -422,6 +443,10 @@ const BlockRenderer = ({ block, theme, updateBlockProps }) => {
     return <ButtonBlock block={block} theme={theme} updateBlockProps={updateBlockProps} />;
   }
 
+  if (block.type === "social") {
+    return <SocialBlock block={block} theme={theme} />;
+  }
+
   if (block.type === "card" || block.type === "hero" || block.type === "offer" || block.type === "coupon") {
     return <CardBlock block={block} theme={theme} updateBlockProps={updateBlockProps} />;
   }
@@ -543,6 +568,87 @@ const ButtonBlock = ({ block, theme, updateBlockProps }) => {
   );
 };
 
+const SocialBlock = ({ block, theme }) => {
+  const props = block.props || {};
+  const links = Array.isArray(props.links) ? props.links : [];
+
+  return (
+    <div
+      className="rounded-md"
+      style={{
+        backgroundColor: props.backgroundColor || "transparent",
+        padding: props.padding || "18px",
+        textAlign: props.align || "center"
+      }}
+    >
+      {props.title && (
+        <EditableField
+          value={props.title}
+          className="font-black"
+          style={{
+            color: props.titleColor || props.textColor || theme.textColor || "#0f172a",
+            fontSize: `${props.titleSize || 16}px`,
+            fontWeight: props.titleWeight || 800,
+            marginBottom: `${Number(props.titleGap ?? 12)}px`
+          }}
+          onCommit={(value) => updateBlockProps(block.id, { title: value })}
+        />
+      )}
+
+      <div className="flex flex-wrap items-center" style={{ justifyContent: props.align || "center", gap: `${Number(props.gap ?? 10)}px` }}>
+        {links.map((link, index) => {
+          const layout = props.layout || "icons";
+          const isText = layout === "text";
+          const isIcons = layout === "icons";
+          const brand = getSocialBrandIcon(link);
+          const iconText = link.icon || brand.text || String(link.label || "so").slice(0, 2).toLowerCase();
+          const badgeSize = Number(props.iconSize ?? 18);
+
+          return (
+            <span
+              key={`${link.label || link.href}-${index}`}
+              className="inline-flex items-center justify-center gap-2 font-black outline-none focus:ring-2 focus:ring-[#0f766e]/30"
+              style={{
+                backgroundColor: isText
+                  ? "transparent"
+                  : (props.useBrandColors === false ? (props.iconBackgroundColor || props.backgroundColor || theme.primaryColor || "#0f172a") : brand.color),
+                color: isText ? (props.textColor || theme.primaryColor || "#0f766e") : (props.iconColor || "#ffffff"),
+                borderRadius: isText ? 0 : `${Number(props.radius ?? 999)}px`,
+                padding: isText ? "0" : (props.itemPadding || "9px 13px"),
+                fontSize: `${Number(props.fontSize ?? 13)}px`,
+                fontWeight: props.fontWeight || 800,
+                minWidth: isIcons ? `${Number(props.iconSize ?? 38)}px` : undefined,
+                textDecoration: isText ? "underline" : "none"
+              }}
+              title={link.label || "Social"}
+            >
+              <span
+                aria-hidden="true"
+                className="inline-flex shrink-0 items-center justify-center rounded-full font-black lowercase"
+                style={{
+                  backgroundColor: isText ? brand.color : "transparent",
+                  color: isText ? "#ffffff" : "inherit",
+                  fontSize: `${Number(props.iconTextSize ?? 11)}px`,
+                  height: `${badgeSize}px`,
+                  lineHeight: `${badgeSize}px`,
+                  minWidth: `${badgeSize}px`,
+                  width: `${badgeSize}px`
+                }}
+              >
+                {iconText}
+              </span>
+              {!isIcons && <span>{link.label || "Social"}</span>}
+            </span>
+          );
+        })}
+        {!links.length && (
+          <span className="text-sm font-semibold text-slate-400">Add social links from the inspector</span>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const CardBlock = ({ block, theme, updateBlockProps }) => {
   const props = block.props || {};
 
@@ -590,8 +696,13 @@ const FormBlock = ({ block, theme, updateBlockProps }) => {
   const showTitle = props.showTitle !== false;
   const showDescription = props.showDescription !== false;
   const hasHeader = showTitle || (showDescription && props.description);
-  const inputTextStyle = {
-    color: props.inputTextColor || "#64748b",
+  const inputLabelStyle = {
+    color: props.inputLabelColor || props.inputTextColor || "#64748b",
+    fontSize: `${props.inputFontSize || 14}px`,
+    fontWeight: props.inputFontWeight || 600
+  };
+  const inputValueStyle = {
+    color: props.inputValueColor || props.inputTextColor || "#64748b",
     fontSize: `${props.inputFontSize || 14}px`,
     fontWeight: props.inputFontWeight || 600
   };
@@ -607,6 +718,12 @@ const FormBlock = ({ block, theme, updateBlockProps }) => {
       className="rounded-xl border p-5"
       style={{
         backgroundColor: props.formBackgroundColor || "#ffffff",
+        backgroundImage: props.backgroundImageUrl
+          ? `${props.backgroundOverlayColor ? `linear-gradient(${props.backgroundOverlayColor}, ${props.backgroundOverlayColor}), ` : ""}url("${props.backgroundImageUrl}")`
+          : undefined,
+        backgroundSize: props.backgroundImageSize || "cover",
+        backgroundPosition: props.backgroundImagePosition || "center",
+        backgroundRepeat: props.backgroundImageRepeat || "no-repeat",
         borderColor: props.borderColor || "#e2e8f0",
         borderRadius: `${props.radius || 12}px`,
         padding: props.padding || "20px"
@@ -660,7 +777,7 @@ const FormBlock = ({ block, theme, updateBlockProps }) => {
                   width: props.inputWidth || "100%",
                   maxWidth: "100%",
                   textAlign: "left",
-                  ...inputTextStyle
+                  ...inputLabelStyle
                 }}
                 onCommit={(value) => updateFieldLabel(fieldIndex, value.replace(/\s\*$/, ""))}
               />
@@ -675,7 +792,7 @@ const FormBlock = ({ block, theme, updateBlockProps }) => {
                   width: props.inputWidth || "100%",
                   maxWidth: "100%",
                   minHeight: `${Number(props.inputHeight ?? 40)}px`,
-                  ...inputTextStyle
+                  ...inputValueStyle
                 }}
               >
                 {field.placeholder || field.name || ""}
@@ -693,7 +810,7 @@ const FormBlock = ({ block, theme, updateBlockProps }) => {
                 width: props.inputWidth || "100%",
                 maxWidth: "100%",
                 minHeight: `${Number(props.inputHeight ?? 40)}px`,
-                ...inputTextStyle
+                ...inputValueStyle
               }}
             >
               Add form fields from the inspector

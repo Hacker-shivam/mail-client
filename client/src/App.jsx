@@ -6,7 +6,7 @@ import AnalyticsDashboard from "./components/AnalyticsDashboard";
 
 const pages = [
   {
-    id: "overview",
+    id: "home",
     label: "Home",
     eyebrow: "Home",
     title: "Acolyte Campaign Suite",
@@ -61,7 +61,11 @@ const pages = [
 
 const getPageFromHash = () => {
   const hash = window.location.hash.replace("#/", "").replace("#", "");
-  return pages.some((page) => page.id === hash) ? hash : "overview";
+  if (hash === "overview") {
+    return "home";
+  }
+
+  return pages.some((page) => page.id === hash) ? hash : "home";
 };
 
 const App = () => {
@@ -72,7 +76,7 @@ const App = () => {
     window.addEventListener("hashchange", handleHashChange);
 
     if (!window.location.hash) {
-      window.history.replaceState(null, "", "#/overview");
+      window.history.replaceState(null, "", "#/home");
     }
 
     return () => window.removeEventListener("hashchange", handleHashChange);
@@ -102,7 +106,7 @@ const App = () => {
           )}
 
           <div className={`${activePage === "templates" ? "mt-0" : "mt-5"} min-w-0`}>
-            {activePage === "overview" && <OverviewPage onNavigate={navigate} />}
+            {activePage === "home" && <HomePage onNavigate={navigate} />}
             {activePage === "templates" && <TemplateForm />}
             {activePage === "campaigns" && (
               <div className="mx-auto max-w-7xl">
@@ -184,7 +188,7 @@ const PageHero = ({ page, activePage, onNavigate }) => {
   );
 };
 
-const OverviewPage = ({ onNavigate }) => {
+const HomePage = ({ onNavigate }) => {
   const metrics = [
     { label: "Main Pages", value: "3", detail: "Templates, Campaigns, Analytics" },
     { label: "Campaign Flow", value: "3", detail: "Create, send, measure" },
