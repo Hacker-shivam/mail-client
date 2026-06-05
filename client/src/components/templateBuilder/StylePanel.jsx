@@ -83,6 +83,42 @@ const DesktopStylePanel = ({ theme, updateTheme, fontOptions, fontLabel }) => (
       </div>
     </StyleAccordion>
 
+    <StyleAccordion title="Shell Background Image">
+      <div className="grid gap-3">
+        <InputField label="Shell image URL" value={theme.backgroundImageUrl || ""} onChange={(event) => updateTheme("backgroundImageUrl", event.target.value)} placeholder="https://example.com/background.jpg" />
+        <InputField label="Overlay" value={theme.backgroundOverlayColor || ""} onChange={(event) => updateTheme("backgroundOverlayColor", event.target.value)} placeholder="rgba(0,0,0,0.25)" />
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className="mb-2 block text-sm font-semibold text-slate-700">Size</span>
+            <select value={theme.backgroundImageSize || "cover"} onChange={(event) => updateTheme("backgroundImageSize", event.target.value)} className={inputClass}>
+              <option value="cover">Cover</option>
+              <option value="contain">Contain</option>
+              <option value="auto">Original</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-2 block text-sm font-semibold text-slate-700">Position</span>
+            <select value={theme.backgroundImagePosition || "center"} onChange={(event) => updateTheme("backgroundImagePosition", event.target.value)} className={inputClass}>
+              <option value="center">Center</option>
+              <option value="top">Top</option>
+              <option value="bottom">Bottom</option>
+              <option value="left">Left</option>
+              <option value="right">Right</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-2 block text-sm font-semibold text-slate-700">Repeat</span>
+            <select value={theme.backgroundImageRepeat || "no-repeat"} onChange={(event) => updateTheme("backgroundImageRepeat", event.target.value)} className={inputClass}>
+              <option value="no-repeat">No repeat</option>
+              <option value="repeat">Repeat</option>
+              <option value="repeat-x">Repeat X</option>
+              <option value="repeat-y">Repeat Y</option>
+            </select>
+          </label>
+        </div>
+      </div>
+    </StyleAccordion>
+
     <StyleAccordion title="Text">
       <div className="grid grid-cols-2 gap-3">
         <InputField label="Body size" type="number" value={theme.bodyFontSize || 16} onChange={(event) => updateTheme("bodyFontSize", Number(event.target.value))} />
@@ -109,6 +145,12 @@ const DesktopStylePanel = ({ theme, updateTheme, fontOptions, fontLabel }) => (
     <StyleAccordion title="Padding & Dimension">
       <div className="grid grid-cols-2 gap-3">
         <InputField label="Body width" type="number" value={theme.width || 600} onChange={(event) => updateTheme("width", Number(event.target.value))} />
+        <InputField label="Image width" type="number" value={theme.desktopImageWidth || theme.bannerWidth || 240} onChange={(event) => {
+          const value = Number(event.target.value);
+          updateTheme("desktopImageWidth", value);
+          updateTheme("bannerWidth", value);
+          updateTheme("imageWidth", value);
+        }} />
         <InputField label="Padding" value={theme.padding || "24px"} onChange={(event) => updateTheme("padding", event.target.value)} />
       </div>
     </StyleAccordion>

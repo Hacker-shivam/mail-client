@@ -21,6 +21,14 @@ const displayText = (value, fallback = "") => {
   return fallback;
 };
 
+const templateIdentifier = (template = {}) => (
+  displayText(template._id) ||
+  displayText(template.id) ||
+  displayText(template.uuid) ||
+  displayText(template.mongoId) ||
+  displayText(template.slug)
+);
+
 const SavedTemplates = ({
   listLoading,
   templates,
@@ -49,16 +57,16 @@ const SavedTemplates = ({
       {!listLoading && templates.length === 0 && <p className="text-sm text-slate-500">No templates saved yet.</p>}
       {templates.map((item) => (
         <button
-          key={item._id}
+          key={templateIdentifier(item) || displayText(item.name, "saved-template")}
           type="button"
           draggable
           onDragStart={(event) => {
-            event.dataTransfer.setData("template/id", item._id);
+            event.dataTransfer.setData("template/id", templateIdentifier(item));
             event.dataTransfer.effectAllowed = "copy";
           }}
-          onClick={() => loadSavedTemplate(item._id)}
+          onClick={() => loadSavedTemplate(item)}
           className={`cursor-grab rounded-lg border bg-white p-3 text-left shadow-sm hover:border-emerald-400 hover:bg-emerald-50 active:cursor-grabbing ${
-            activeTemplateId === item._id ? "border-emerald-500 bg-emerald-50" : "border-slate-200"
+            activeTemplateId === templateIdentifier(item) ? "border-emerald-500 bg-emerald-50" : "border-slate-200"
           }`}
         >
           <div className="flex items-start justify-between gap-3">

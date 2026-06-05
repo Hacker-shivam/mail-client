@@ -1,22 +1,42 @@
 import { DEFAULT_THEME, INTERACTIVE_BLOCK_TYPES } from "./schema";
 import { interpolateVariables } from "./variables";
+import { apiUrl } from "../../api/Api";
 
 const DEFAULT_FORM_AMP_URL = "https://example.com/amp-form-submit";
+const templateAssetUrl = (path) => apiUrl(`/template-assets/${path}`);
 
 const SOCIAL_BRAND_ICONS = {
-  facebook: { text: "f", color: "#1877f2" },
-  instagram: { text: "ig", color: "#e4405f" },
-  linkedin: { text: "in", color: "#0a66c2" },
-  youtube: { text: "yt", color: "#ff0000" },
-  x: { text: "x", color: "#000000" },
-  twitter: { text: "x", color: "#000000" },
-  whatsapp: { text: "wa", color: "#25d366" },
+  facebook: { text: "f", color: "#1877f2", src: templateAssetUrl("social-logos/facebook.svg") },
+  instagram: { text: "ig", color: "#e4405f", src: templateAssetUrl("social-logos/instagram.svg") },
+  linkedin: { text: "in", color: "#0a66c2", src: templateAssetUrl("social-logos/linkedin.svg") },
+  youtube: { text: "yt", color: "#ff0000", src: templateAssetUrl("social-logos/youtube.svg") },
+  x: { text: "x", color: "#000000", src: templateAssetUrl("social-logos/x.svg") },
+  twitter: { text: "x", color: "#000000", src: templateAssetUrl("social-logos/x.svg") },
+  whatsapp: { text: "wa", color: "#25d366", src: templateAssetUrl("social-logos/whatsapp.svg") },
   telegram: { text: "tg", color: "#26a5e4" },
   tiktok: { text: "tt", color: "#000000" },
   threads: { text: "@", color: "#000000" },
   email: { text: "@", color: "#ea4335" },
   website: { text: "www", color: "#4285f4" },
   link: { text: "go", color: "#0f766e" }
+};
+
+const LEGACY_SOCIAL_LOGO_URLS = {
+  "facebook-logo.svg": SOCIAL_BRAND_ICONS.facebook.src,
+  "facebook_dnmevs.svg": SOCIAL_BRAND_ICONS.facebook.src,
+  "instagram-logo.svg": SOCIAL_BRAND_ICONS.instagram.src,
+  "instagram_tzptb7.svg": SOCIAL_BRAND_ICONS.instagram.src,
+  "youtube-logo.svg": SOCIAL_BRAND_ICONS.youtube.src,
+  "youtube_w6vzni.svg": SOCIAL_BRAND_ICONS.youtube.src,
+  "x-logo.svg": SOCIAL_BRAND_ICONS.x.src,
+  "x_urkz34.svg": SOCIAL_BRAND_ICONS.x.src,
+  "whatsapp-logo.svg": SOCIAL_BRAND_ICONS.whatsapp.src,
+  "whatsapp_gma4kg.svg": SOCIAL_BRAND_ICONS.whatsapp.src
+};
+
+const normalizeSocialLogoUrl = (url) => {
+  const fileName = String(url || "").split("/").pop();
+  return LEGACY_SOCIAL_LOGO_URLS[fileName] || url;
 };
 
 const getSocialBrandIcon = (link = {}) => {
@@ -39,19 +59,99 @@ const css = (styles = {}) => Object.entries(styles)
 
 const cssUrl = (value = "") => encodeURI(String(value)).replace(/[)"'\\\r\n]/g, "");
 
+const transparentIfEnabled = (enabled, value, fallback) => (
+  enabled ? "transparent" : (value || fallback)
+);
+
 const formContainerStyles = (props = {}) => ({
-  background: props.formBackgroundColor || "#ffffff",
+  background: transparentIfEnabled(props.formBackgroundTransparent, props.formBackgroundColor, "#ffffff"),
   "background-image": props.backgroundImageUrl
     ? `${props.backgroundOverlayColor ? `linear-gradient(${props.backgroundOverlayColor}, ${props.backgroundOverlayColor}), ` : ""}url(${cssUrl(props.backgroundImageUrl)})`
     : "",
   "background-size": props.backgroundImageUrl ? (props.backgroundImageSize || "cover") : "",
   "background-position": props.backgroundImageUrl ? (props.backgroundImagePosition || "center") : "",
   "background-repeat": props.backgroundImageUrl ? (props.backgroundImageRepeat || "no-repeat") : "",
-  border: `1px solid ${props.borderColor || "#e2e8f0"}`,
+  border: `${Number(props.borderWidth ?? 1)}px solid ${props.borderColor || "#e2e8f0"}`,
+  "border-top": props.topAccentColor ? `${Number(props.topAccentWidth ?? 4)}px solid ${props.topAccentColor}` : "",
   "border-radius": px(props.radius, 12),
   padding: props.padding || "20px",
   "text-align": props.align || "left"
 });
+
+const emailBackgroundStyles = (theme = {}) => ({
+  background: theme.backgroundColor || "#f8fafc"
+});
+
+const emailShellStyles = (theme = {}) => ({
+  background: theme.contentColor || "#ffffff",
+  "background-image": theme.backgroundImageUrl
+    ? `${theme.backgroundOverlayColor ? `linear-gradient(${theme.backgroundOverlayColor}, ${theme.backgroundOverlayColor}), ` : ""}url(${cssUrl(theme.backgroundImageUrl)})`
+    : "",
+  "background-size": theme.backgroundImageUrl ? (theme.backgroundImageSize || "cover") : "",
+  "background-position": theme.backgroundImageUrl ? (theme.backgroundImagePosition || "center") : "",
+  "background-repeat": theme.backgroundImageUrl ? (theme.backgroundImageRepeat || "no-repeat") : "",
+  "background-color": theme.contentColor || "#ffffff"
+});
+
+const formProgressDots = (props = {}, theme = {}) => {
+  if (!props.progressDots) {
+    return "";
+  }
+
+  const active = props.progressColor || theme.primaryColor || "#6c4cff";
+  const muted = props.progressMutedColor || "#cbd5e1";
+  return `<div style="text-align:center;margin-bottom:16px"><span style="display:inline-block;width:26px;height:8px;border-radius:999px;background:${active};vertical-align:middle"></span><span style="display:inline-block;width:8px;height:8px;border-radius:999px;background:${muted};margin-left:8px;vertical-align:middle"></span><span style="display:inline-block;width:8px;height:8px;border-radius:999px;background:${muted};margin-left:8px;vertical-align:middle"></span></div>`;
+};
+
+const formDivider = (props = {}) => {
+  if (!props.dividerText) {
+    return "";
+  }
+
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:20px 0"><tr><td style="border-top:1px solid ${props.dividerColor || "#e2e8f0"}"></td><td style="width:1%;white-space:nowrap;padding:0 12px;color:${props.dividerTextColor || props.descriptionColor || props.textColor || "#64748b"};font-size:12px;font-weight:700">${escapeHtml(props.dividerText)}</td><td style="border-top:1px solid ${props.dividerColor || "#e2e8f0"}"></td></tr></table>`;
+};
+
+const formTrustBadges = (props = {}, theme = {}) => {
+  const badges = Array.isArray(props.trustBadges) ? props.trustBadges : [];
+
+  if (!badges.length) {
+    return "";
+  }
+
+  const dotColor = props.trustColor || theme.primaryColor || "#0f766e";
+  const textColor = props.trustTextColor || props.descriptionColor || "#64748b";
+  const content = badges.map((badge) => `<span style="display:inline-block;margin:4px 10px;color:${textColor};font-size:13px;font-weight:700"><span style="display:inline-block;width:8px;height:8px;border-radius:999px;background:${dotColor};margin-right:7px"></span>${escapeHtml(badge)}</span>`).join("");
+  return `<div style="text-align:center;margin-top:20px">${content}</div>`;
+};
+
+const renderThankYouMessage = (props = {}, theme = {}) => {
+  const title = props.thankYouTitle || theme.thankYouTitle || "Thank you";
+  const text = props.thankYouText || theme.thankYouText || "Your response was submitted.";
+
+  return `<div style="${css({
+    background: props.thankYouBackgroundColor || theme.thankYouBackgroundColor || "#ecfdf5",
+    border: `1px solid ${props.thankYouBorderColor || theme.thankYouBorderColor || "#34d399"}`,
+    "border-radius": px(props.thankYouRadius || theme.thankYouRadius, 10),
+    padding: props.thankYouPadding || theme.thankYouPadding || "16px",
+    "text-align": props.thankYouAlign || theme.thankYouAlign || "center",
+    margin: props.thankYouMargin || theme.thankYouMargin || "14px 0 0"
+  })}">
+    <div style="${css({
+      color: props.thankYouTitleColor || theme.thankYouTitleColor || "#047857",
+      "font-size": fontSize(props.thankYouTitleSize || theme.thankYouTitleSize, 18, 14),
+      "font-weight": props.thankYouTitleWeight || theme.thankYouTitleWeight || 800,
+      "line-height": 1.3,
+      margin: "0"
+    })}">${escapeHtml(interpolateVariables(title))}</div>
+    <div style="${css({
+      color: props.thankYouTextColor || theme.thankYouTextColor || "#064e3b",
+      "font-size": fontSize(props.thankYouTextSize || theme.thankYouTextSize, 14, 12),
+      "font-weight": props.thankYouTextWeight || theme.thankYouTextWeight || 600,
+      "line-height": 1.5,
+      margin: "6px 0 0"
+    })}">${escapeHtml(interpolateVariables(text))}</div>
+  </div>`;
+};
 
 const removeMediaFeatureBlocks = (value = "", feature = "prefers-color-scheme") => {
   let output = "";
@@ -148,15 +248,46 @@ const fontSize = (value, fallback, min = 12) => {
   return `clamp(${min}px, ${vw}vw, ${size}px)`;
 };
 
+const boxPadding = (props = {}, fallback = "0") => {
+  const top = props.paddingTop;
+  const right = props.paddingRight;
+  const bottom = props.paddingBottom;
+  const left = props.paddingLeft;
+  const hasSidePadding = [top, right, bottom, left].some((value) => value !== undefined && value !== "");
+
+  if (hasSidePadding) {
+    return `${Number(top ?? 0)}px ${Number(right ?? 0)}px ${Number(bottom ?? 0)}px ${Number(left ?? 0)}px`;
+  }
+
+  return props.padding || fallback;
+};
+
+const boxMargin = (props = {}, fallback = "0") => {
+  const top = props.marginTop;
+  const right = props.marginRight;
+  const bottom = props.marginBottom;
+  const left = props.marginLeft;
+  const hasSideMargin = [top, right, bottom, left].some((value) => value !== undefined && value !== "");
+
+  if (hasSideMargin) {
+    return `${Number(top ?? 0)}px ${Number(right ?? 0)}px ${Number(bottom ?? 0)}px ${Number(left ?? 0)}px`;
+  }
+
+  return props.margin || fallback;
+};
+
 const responsiveCss = (width) => `
       body { width:100%; min-width:100%; }
       table { border-collapse:collapse; }
       img { border:0; outline:none; text-decoration:none; }
       .studio-outer { width:100%; }
       .studio-canvas { width:100%; max-width:${Number(width || 600)}px; }
+      .email-shell { width:${Number(width || 600)}px; max-width:100%; margin:0 auto; }
       .studio-block-cell { box-sizing:border-box; }
       .studio-fluid-image { max-width:100%; height:auto; }
       .studio-image-wrap { max-width:100%; box-sizing:border-box; }
+      .email-image-frame { width:100%; max-width:100%; margin:0 auto; box-sizing:border-box; }
+      .email-image { width:100%; max-width:100%; height:auto; }
       .studio-responsive-button { max-width:100%; box-sizing:border-box; overflow-wrap:anywhere; }
       .studio-responsive-form { box-sizing:border-box; max-width:100%; }
       .studio-responsive-shape { max-width:100%; box-sizing:border-box; }
@@ -170,6 +301,9 @@ const responsiveCss = (width) => `
       @media only screen and (max-width: 480px) {
         .studio-page-pad { padding:0; }
         .studio-canvas { width:100%; max-width:100%; }
+        .email-shell,
+        .email-image-frame { width:100% !important; max-width:100% !important; }
+        .email-image { max-width:100% !important; height:auto !important; }
         .studio-block-cell { padding:0; }
         .studio-title { font-size:clamp(18px, 6.5vw, 28px); line-height:1.25; }
         .studio-body { font-size:clamp(13px, 4vw, 16px); line-height:1.5; }
@@ -227,8 +361,8 @@ const textStyle = (props = {}, theme = {}, scope = "body") => {
 
 const renderFields = (props = {}, fields = []) => {
   const fieldStyle = css({
-    background: props.inputBackgroundColor || "#f8fafc",
-    border: `1px solid ${props.inputBorderColor || "#e2e8f0"}`,
+    background: transparentIfEnabled(props.inputBackgroundTransparent, props.inputBackgroundColor, "#f8fafc"),
+    border: `${Number(props.inputBorderWidth ?? 1)}px solid ${props.inputBorderColor || "#e2e8f0"}`,
     "border-radius": px(props.inputRadius, 6),
     padding: "10px 12px",
     "box-sizing": "border-box",
@@ -247,10 +381,13 @@ const renderFields = (props = {}, fields = []) => {
 
   return fields.map((field) => {
     const label = escapeHtml(field.label || field.question || field.name || "Field");
+    const helper = field.helperText
+      ? `<div style="margin-top:7px;color:${props.helperTextColor || props.descriptionColor || props.textColor || "#64748b"};font-size:13px;font-weight:600">${escapeHtml(field.helperText)}</div>`
+      : "";
     return `
       <label class="studio-field" style="margin-bottom:${spacingPx(props.fieldGap, 10)}">
         <div style="text-align:${props.inputAlign || "left"}"><span class="studio-input studio-field-label" style="${textStyle(props, {}, "input")};display:inline-block;width:${sizeValue(props.inputWidth, "100%")};max-width:100%;text-align:left;margin-bottom:${spacingPx(props.labelGap, 5)}">${label}${field.required ? " *" : ""}</span></div>
-        <div style="text-align:${props.inputAlign || "left"}"><div class="studio-input" style="${fieldStyle};display:inline-block;text-align:left">${escapeHtml(field.placeholder || "")}</div></div>
+        <div style="text-align:${props.inputAlign || "left"}"><div class="studio-input" style="${fieldStyle};display:inline-block;text-align:left">${escapeHtml(field.placeholder || "")}</div>${helper}</div>
       </label>
     `;
   }).join("");
@@ -258,8 +395,8 @@ const renderFields = (props = {}, fields = []) => {
 
 const renderRealFormFields = (props = {}, fields = [], amp = false) => {
   const inputStyle = css({
-    background: props.inputBackgroundColor || "#f8fafc",
-    border: `1px solid ${props.inputBorderColor || "#e2e8f0"}`,
+    background: transparentIfEnabled(props.inputBackgroundTransparent, props.inputBackgroundColor, "#f8fafc"),
+    border: `${Number(props.inputBorderWidth ?? 1)}px solid ${props.inputBorderColor || "#e2e8f0"}`,
     "border-radius": px(props.inputRadius, 6),
     padding: "10px 12px",
     "box-sizing": "border-box",
@@ -283,7 +420,8 @@ const renderRealFormFields = (props = {}, fields = [], amp = false) => {
     const placeholder = escapeHtml(field.placeholder || "");
 
     if (type === "textarea") {
-      return `<label class="studio-field" style="margin-bottom:${spacingPx(props.fieldGap, 10)}"><div style="text-align:${props.inputAlign || "left"}"><span class="studio-input studio-field-label" style="${textStyle(props, {}, "input")};display:inline-block;width:${sizeValue(props.inputWidth, "100%")};max-width:100%;text-align:left;margin-bottom:${spacingPx(props.labelGap, 5)}">${label}${field.required ? " *" : ""}</span></div><div style="text-align:${props.inputAlign || "left"}"><textarea name="${name}"${required} placeholder="${placeholder}" rows="4" style="${inputStyle};display:inline-block;text-align:left"></textarea></div></label>`;
+      const helper = field.helperText ? `<div style="margin-top:7px;color:${props.helperTextColor || props.descriptionColor || props.textColor || "#64748b"};font-size:13px;font-weight:600">${escapeHtml(field.helperText)}</div>` : "";
+      return `<label class="studio-field" style="margin-bottom:${spacingPx(props.fieldGap, 10)}"><div style="text-align:${props.inputAlign || "left"}"><span class="studio-input studio-field-label" style="${textStyle(props, {}, "input")};display:inline-block;width:${sizeValue(props.inputWidth, "100%")};max-width:100%;text-align:left;margin-bottom:${spacingPx(props.labelGap, 5)}">${label}${field.required ? " *" : ""}</span></div><div style="text-align:${props.inputAlign || "left"}"><textarea name="${name}"${required} placeholder="${placeholder}" rows="4" style="${inputStyle};display:inline-block;text-align:left"></textarea>${helper}</div></label>`;
     }
 
     if (type === "select") {
@@ -292,7 +430,8 @@ const renderRealFormFields = (props = {}, fields = [], amp = false) => {
         const optionValue = typeof option === "string" ? option : (option.value || option.label || "");
         return `<option value="${escapeHtml(optionValue)}">${escapeHtml(optionLabel)}</option>`;
       }).join("");
-      return `<label class="studio-field" style="margin-bottom:${spacingPx(props.fieldGap, 10)}"><div style="text-align:${props.inputAlign || "left"}"><span class="studio-input studio-field-label" style="${textStyle(props, {}, "input")};display:inline-block;width:${sizeValue(props.inputWidth, "100%")};max-width:100%;text-align:left;margin-bottom:${spacingPx(props.labelGap, 5)}">${label}${field.required ? " *" : ""}</span></div><div style="text-align:${props.inputAlign || "left"}"><select name="${name}"${required} style="${inputStyle};display:inline-block;text-align:left">${options}</select></div></label>`;
+      const helper = field.helperText ? `<div style="margin-top:7px;color:${props.helperTextColor || props.descriptionColor || props.textColor || "#64748b"};font-size:13px;font-weight:600">${escapeHtml(field.helperText)}</div>` : "";
+      return `<label class="studio-field" style="margin-bottom:${spacingPx(props.fieldGap, 10)}"><div style="text-align:${props.inputAlign || "left"}"><span class="studio-input studio-field-label" style="${textStyle(props, {}, "input")};display:inline-block;width:${sizeValue(props.inputWidth, "100%")};max-width:100%;text-align:left;margin-bottom:${spacingPx(props.labelGap, 5)}">${label}${field.required ? " *" : ""}</span></div><div style="text-align:${props.inputAlign || "left"}"><select name="${name}"${required} style="${inputStyle};display:inline-block;text-align:left">${options}</select>${helper}</div></label>`;
     }
 
     if (type === "radio" || type === "checkbox") {
@@ -304,7 +443,8 @@ const renderRealFormFields = (props = {}, fields = [], amp = false) => {
       return `<div class="studio-choice-group" style="margin-bottom:${spacingPx(props.fieldGap, 10)}"><div style="text-align:${props.inputAlign || "left"}"><div class="studio-input studio-field-label" style="${textStyle(props, {}, "input")};display:inline-block;width:${sizeValue(props.inputWidth, "100%")};max-width:100%;text-align:left;margin-bottom:${spacingPx(props.labelGap, 5)}">${label}${field.required ? " *" : ""}</div></div>${options}</div>`;
     }
 
-    return `<label class="studio-field" style="margin-bottom:${spacingPx(props.fieldGap, 10)}"><div style="text-align:${props.inputAlign || "left"}"><span class="studio-input studio-field-label" style="${textStyle(props, {}, "input")};display:inline-block;width:${sizeValue(props.inputWidth, "100%")};max-width:100%;text-align:left;margin-bottom:${spacingPx(props.labelGap, 5)}">${label}${field.required ? " *" : ""}</span></div><div style="text-align:${props.inputAlign || "left"}"><input type="${escapeHtml(type)}" name="${name}"${required} placeholder="${placeholder}" style="${inputStyle};display:inline-block;text-align:left" /></div></label>`;
+    const helper = field.helperText ? `<div style="margin-top:7px;color:${props.helperTextColor || props.descriptionColor || props.textColor || "#64748b"};font-size:13px;font-weight:600">${escapeHtml(field.helperText)}</div>` : "";
+    return `<label class="studio-field" style="margin-bottom:${spacingPx(props.fieldGap, 10)}"><div style="text-align:${props.inputAlign || "left"}"><span class="studio-input studio-field-label" style="${textStyle(props, {}, "input")};display:inline-block;width:${sizeValue(props.inputWidth, "100%")};max-width:100%;text-align:left;margin-bottom:${spacingPx(props.labelGap, 5)}">${label}${field.required ? " *" : ""}</span></div><div style="text-align:${props.inputAlign || "left"}"><input type="${escapeHtml(type)}" name="${name}"${required} placeholder="${placeholder}" style="${inputStyle};display:inline-block;text-align:left" />${helper}</div></label>`;
   }).join("");
 };
 
@@ -317,7 +457,7 @@ const renderFormLikeBlock = (block, theme) => {
   const showDescription = props.showDescription !== false && Boolean(description);
   const fieldTopGap = showTitle || showDescription ? spacingPx(props.fieldTopGap, 14) : "0";
   const buttonStyle = css({
-    background: props.buttonColor || props.submitColor || props.backgroundColor || theme.buttonColor || theme.primaryColor || "#0f766e",
+    background: transparentIfEnabled(props.buttonBackgroundTransparent, props.buttonColor || props.submitColor || props.backgroundColor, theme.buttonColor || theme.primaryColor || "#0f766e"),
     color: props.buttonTextColor || props.color || theme.buttonTextColor || "#ffffff",
     "font-size": fontSize(props.buttonFontSize || props.fontSize || theme.buttonFontSize, 14, 13),
     "font-weight": props.buttonFontWeight || 800,
@@ -327,6 +467,7 @@ const renderFormLikeBlock = (block, theme) => {
     width: sizeValue(props.buttonWidth, "100%"),
     "max-width": "100%",
     "min-height": sizeValue(props.buttonHeight, "44px"),
+    border: `${Number(props.buttonBorderWidth ?? 0)}px solid ${props.buttonBorderColor || "transparent"}`,
     display: "inline-block",
     "text-align": "center",
     "box-sizing": "border-box",
@@ -335,10 +476,13 @@ const renderFormLikeBlock = (block, theme) => {
 
   return `
     <div class="studio-responsive-form" style="${css(formContainerStyles(props))}">
+      ${formProgressDots(props, theme)}
       ${showTitle ? `<div class="studio-text studio-title" style="${textStyle(props, theme, "title")};text-align:${props.titleAlign || props.align || "left"};margin-top:${spacingPx(props.titleTopGap, 0)};margin-bottom:${spacingPx(props.titleBottomGap, 0)};padding-left:${spacingPx(props.titleIndent, 0)}">${escapeHtml(interpolateVariables(title))}</div>` : ""}
       ${showDescription ? `<div class="studio-text studio-description" style="${textStyle(props, theme, "description")};text-align:${props.descriptionAlign || props.titleAlign || props.align || "left"}">${escapeHtml(interpolateVariables(description))}</div>` : ""}
       <div class="studio-fields" style="margin-top:${fieldTopGap}">${renderFields(props, fields)}</div>
+      ${formDivider(props)}
       <div style="text-align:${props.buttonAlign || props.align || "left"}"><div class="studio-responsive-button studio-form-button" style="${buttonStyle};margin-top:${spacingPx(props.buttonTopGap, 12)}">${escapeHtml(props.submitText || props.buttonText || "Submit")}</div></div>
+      ${formTrustBadges(props, theme)}
     </div>
   `;
 };
@@ -352,13 +496,13 @@ const renderAmpFormBlock = (block, theme) => {
   const showDescription = props.showDescription !== false && Boolean(description);
   const fieldTopGap = showTitle || showDescription ? spacingPx(props.fieldTopGap, 14) : "0";
   const buttonStyle = css({
-    background: props.buttonColor || props.submitColor || props.backgroundColor || theme.buttonColor || theme.primaryColor || "#0f766e",
+    background: transparentIfEnabled(props.buttonBackgroundTransparent, props.buttonColor || props.submitColor || props.backgroundColor, theme.buttonColor || theme.primaryColor || "#0f766e"),
     color: props.buttonTextColor || props.color || theme.buttonTextColor || "#ffffff",
     "font-size": fontSize(props.buttonFontSize || props.fontSize || theme.buttonFontSize, 14, 13),
     "font-weight": props.buttonFontWeight || 800,
     "border-radius": px(props.buttonRadius || theme.buttonRadius, 8),
     padding: props.buttonPadding || theme.buttonPadding || "13px 18px",
-    border: "0",
+    border: `${Number(props.buttonBorderWidth ?? 0)}px solid ${props.buttonBorderColor || "transparent"}`,
     width: sizeValue(props.buttonWidth, "100%"),
     "max-width": "100%",
     "min-height": sizeValue(props.buttonHeight, "44px"),
@@ -368,11 +512,14 @@ const renderAmpFormBlock = (block, theme) => {
 
   return `
     <form class="studio-responsive-form" method="post" action-xhr="${escapeHtml(ampActionXhr(props.actionXhr || theme.formAmpUrl))}" style="${css(formContainerStyles(props))}">
+      ${formProgressDots(props, theme)}
       ${showTitle ? `<div class="studio-text studio-title" style="${textStyle(props, theme, "title")};text-align:${props.titleAlign || props.align || "left"};margin-top:${spacingPx(props.titleTopGap, 0)};margin-bottom:${spacingPx(props.titleBottomGap, 0)};padding-left:${spacingPx(props.titleIndent, 0)}">${escapeHtml(interpolateVariables(title))}</div>` : ""}
       ${showDescription ? `<div class="studio-text studio-description" style="${textStyle(props, theme, "description")};text-align:${props.descriptionAlign || props.titleAlign || props.align || "left"}">${escapeHtml(interpolateVariables(description))}</div>` : ""}
       <div class="studio-fields" style="margin-top:${fieldTopGap}">${renderRealFormFields(props, fields, true)}</div>
+      ${formDivider(props)}
       <div style="text-align:${props.buttonAlign || props.align || "left"}"><button type="submit" class="studio-responsive-button studio-form-button" style="${buttonStyle};margin-top:${spacingPx(props.buttonTopGap, 12)}">${escapeHtml(props.submitText || props.buttonText || "Submit")}</button></div>
-      <div submit-success><template type="amp-mustache">Thank you. Your response was submitted.</template></div>
+      ${formTrustBadges(props, theme)}
+      <div submit-success><template type="amp-mustache">${renderThankYouMessage(props, theme)}</template></div>
       <div submit-error><template type="amp-mustache">Something went wrong. Please try again.</template></div>
     </form>
   `;
@@ -412,6 +559,7 @@ const renderBlock = (block, theme, mode = "html") => {
       "font-weight": props.fontWeight || (type === "heading" ? 800 : theme.fontWeight || 400),
       "line-height": props.lineHeight || theme.lineHeight || 1.45,
       "text-align": props.align || "left",
+      padding: boxPadding(props, "0"),
       margin: type === "heading" ? "0 0 10px" : "0 0 14px"
     })}" class="studio-text ${type === "heading" ? "studio-title" : "studio-body"}">${escapeHtml(interpolateVariables(props.text || ""))}</${tag}>`;
   }
@@ -436,20 +584,24 @@ const renderBlock = (block, theme, mode = "html") => {
   }
 
   if (type === "image") {
+    const imageWidth = props.width || props.bannerWidth || props.imageWidth || theme.desktopImageWidth || theme.bannerWidth || theme.imageWidth || 240;
+    const imageHeight = props.height || props.bannerHeight || props.imageHeight;
+
     return `<div style="${css({
       "text-align": props.align || "center",
       padding: props.padding ?? theme.imagePadding ?? "0",
       "box-sizing": "border-box"
     })}">
-      <span class="studio-image-wrap" style="${css({
+      <span class="studio-image-wrap email-image-frame" style="${css({
         display: "block",
         width: "100%",
-        "max-width": "100%"
+        "max-width": px(imageWidth, 240),
+        margin: "0 auto"
       })}">
-        <img class="studio-fluid-image" src="${escapeHtml(props.src || "")}" alt="${escapeHtml(props.alt || "")}" style="${css({
+        <img class="studio-fluid-image email-image" src="${escapeHtml(props.src || "")}" alt="${escapeHtml(props.alt || "")}" width="${Number(imageWidth || 240)}"${imageHeight ? ` height="${Number(imageHeight)}"` : ""} style="${css({
       width: "100%",
-      height: props.height && props.height !== "auto" && !props.responsiveHeight ? px(props.height, 320) : "auto",
-      "max-width": "100%",
+      height: imageHeight && imageHeight !== "auto" && !props.responsiveHeight ? px(imageHeight, 120) : "auto",
+      "max-width": px(imageWidth, 240),
       "border-radius": px(props.radius, 0),
       display: "block",
       "object-fit": props.objectFit || "contain"
@@ -473,11 +625,15 @@ const renderBlock = (block, theme, mode = "html") => {
       : "";
 
     const layout = props.layout || "icons";
-    const itemStyle = (brand) => css({
+    const itemStyle = (brand, link = {}) => css({
       display: "inline-block",
       background: layout === "text"
         ? "transparent"
-        : (props.useBrandColors === false ? (props.iconBackgroundColor || props.backgroundColor || theme.primaryColor || "#0f172a") : brand.color),
+        : (link.backgroundColor || link.iconBackgroundColor || (
+          props.useBrandColors === false
+            ? (props.iconBackgroundColor || props.backgroundColor || theme.primaryColor || "#0f172a")
+            : brand.color
+        )),
       color: layout === "text" ? (props.textColor || theme.primaryColor || "#0f766e") : (props.iconColor || "#ffffff"),
       "border-radius": layout === "text" ? "0" : px(props.radius, 999),
       padding: layout === "text" ? "0" : (props.itemPadding || "9px 13px"),
@@ -501,7 +657,9 @@ const renderBlock = (block, theme, mode = "html") => {
           const brand = getSocialBrandIcon(link);
           const label = escapeHtml(link.label || link.icon || "Link");
           const iconSize = sizeValue(props.iconSize, "18px");
+          const iconDimension = Number.parseInt(iconSize, 10) || 18;
           const iconText = escapeHtml(link.icon || brand.text || label.slice(0, 2).toLowerCase());
+          const logoSrc = normalizeSocialLogoUrl(link.iconUrl || link.logoUrl || brand.src);
           const iconBadge = `<span aria-hidden="true" style="${css({
             display: "inline-block",
             width: iconSize,
@@ -517,9 +675,17 @@ const renderBlock = (block, theme, mode = "html") => {
             "vertical-align": "middle",
             "font-family": "Arial, sans-serif",
             "text-transform": "lowercase"
-          })}">${iconText}</span>`;
+          })}">${logoSrc ? `<img src="${escapeHtml(logoSrc)}" alt="${label}" width="${iconDimension}" height="${iconDimension}" style="${css({
+            display: "block",
+            width: iconSize,
+            height: iconSize,
+            border: "0",
+            outline: "none",
+            "text-decoration": "none",
+            "vertical-align": "middle"
+          })}" />` : iconText}</span>`;
           const text = layout === "icons" ? iconBadge : `${iconBadge}<span style="vertical-align:middle;margin-left:6px">${label}</span>`;
-          return `<a href="${escapeHtml(link.href || "#")}" aria-label="${label}" style="${itemStyle(brand)};margin:${index === 0 ? "0" : `0 0 0 ${spacingPx(props.gap, 10)}`}">${text}</a>`;
+          return `<a href="${escapeHtml(link.href || "#")}" aria-label="${label}" style="${itemStyle(brand, link)};margin:${index === 0 ? "0" : `0 0 0 ${spacingPx(props.gap, 10)}`}">${text}</a>`;
         }).join("")}
       </div>
     </div>`;
@@ -585,7 +751,7 @@ const renderBlock = (block, theme, mode = "html") => {
   }
 
   if (type === "divider") {
-    return `<div style="height:1px;background:${props.color || "#e5e7eb"};margin:12px 0"></div>`;
+    return `<div style="height:1px;background:${props.color || "#e5e7eb"};margin:${boxMargin(props, "12px 0")}"></div>`;
   }
 
   if (type === "spacer") {
@@ -621,6 +787,8 @@ export const renderStudioDocument = (sourceJson = {}) => {
     ...(sourceJson.theme || {})
   };
   const blocks = sourceJson.blocks || [];
+  const outerBackgroundStyle = css(emailBackgroundStyles(theme));
+  const shellBackgroundStyle = css(emailShellStyles(theme));
   const content = blocks.map((block) => `
     <tr>
       <td class="studio-block-cell" style="padding:${theme.blockPadding ?? "0"}">
@@ -645,11 +813,11 @@ export const renderStudioDocument = (sourceJson = {}) => {
 ${responsiveCss(theme.width)}
     </style>
   </head>
-  <body style="margin:0;padding:0;background:${theme.backgroundColor};font-family:${theme.fontFamily};color:${theme.textColor}">
-    <table class="studio-outer" role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:${theme.backgroundColor};width:100%">
+  <body style="margin:0;padding:0;${outerBackgroundStyle};font-family:${theme.fontFamily};color:${theme.textColor}">
+    <table class="studio-outer" role="presentation" width="100%" cellspacing="0" cellpadding="0" style="${outerBackgroundStyle};width:100%">
       <tr>
         <td class="studio-page-pad" align="center" style="padding:${theme.pagePadding ?? "0"}">
-          <table class="studio-canvas" role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;max-width:${Number(theme.width || 600)}px;background:${theme.contentColor};border:${Number(theme.borderWidth || 0)}px solid ${theme.borderColor || "#e2e8f0"};border-radius:${Number(theme.radius || 0)}px">
+          <table class="studio-canvas email-shell" role="presentation" width="${Number(theme.width || 600)}" cellspacing="0" cellpadding="0" style="width:${Number(theme.width || 600)}px;max-width:100%;margin:0 auto;${shellBackgroundStyle};border:${Number(theme.borderWidth || 0)}px solid ${theme.borderColor || "#e2e8f0"};border-radius:${Number(theme.radius || 0)}px">
             ${content || `<tr><td style="padding:80px 20px;text-align:center;color:${theme.mutedColor}">Blank template</td></tr>`}
           </table>
         </td>
@@ -670,11 +838,11 @@ ${responsiveCss(theme.width)}
 ${sanitizeAmpCss(responsiveCss(theme.width))}
     </style>
   </head>
-  <body style="margin:0;padding:0;background:${theme.backgroundColor};font-family:${theme.fontFamily};color:${theme.textColor}">
-    <table class="studio-outer" role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:${theme.backgroundColor};width:100%">
+  <body style="margin:0;padding:0;${outerBackgroundStyle};font-family:${theme.fontFamily};color:${theme.textColor}">
+    <table class="studio-outer" role="presentation" width="100%" cellspacing="0" cellpadding="0" style="${outerBackgroundStyle};width:100%">
       <tr>
         <td class="studio-page-pad" align="center" style="padding:${theme.pagePadding ?? "0"}">
-          <table class="studio-canvas" role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;max-width:${Number(theme.width || 600)}px;background:${theme.contentColor};border:${Number(theme.borderWidth || 0)}px solid ${theme.borderColor || "#e2e8f0"};border-radius:${Number(theme.radius || 0)}px">
+          <table class="studio-canvas email-shell" role="presentation" width="${Number(theme.width || 600)}" cellspacing="0" cellpadding="0" style="width:${Number(theme.width || 600)}px;max-width:100%;margin:0 auto;${shellBackgroundStyle};border:${Number(theme.borderWidth || 0)}px solid ${theme.borderColor || "#e2e8f0"};border-radius:${Number(theme.radius || 0)}px">
             ${ampContent || `<tr><td style="padding:80px 20px;text-align:center;color:${theme.mutedColor}">Blank template</td></tr>`}
           </table>
         </td>
@@ -695,7 +863,7 @@ ${sanitizeAmpCss(responsiveCss(theme.width))}
     <style amp-boilerplate>body{-webkit-animation:-amp-start 8s steps(1,end) 0s 1 normal both;-moz-animation:-amp-start 8s steps(1,end) 0s 1 normal both;-ms-animation:-amp-start 8s steps(1,end) 0s 1 normal both;animation:-amp-start 8s steps(1,end) 0s 1 normal both}@-webkit-keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}@-moz-keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}@-ms-keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}@-o-keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}@keyframes -amp-start{from{visibility:hidden}to{visibility:visible}}</style><noscript><style amp-boilerplate>body{-webkit-animation:none;-moz-animation:none;-ms-animation:none;animation:none}</style></noscript>
     <style amp-custom>
 ${sanitizeAmpCss(responsiveCss(theme.width))}
-      body { font-family:${theme.fontFamily}; background:${theme.backgroundColor}; padding:16px; color:${theme.textColor}; box-sizing:border-box; }
+      body { font-family:${theme.fontFamily}; ${outerBackgroundStyle}; padding:16px; color:${theme.textColor}; box-sizing:border-box; }
       .studio-web-form-shell { max-width:${Number(theme.width || 600)}px; margin:0 auto; }
     </style>
   </head>

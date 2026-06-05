@@ -15,6 +15,7 @@ const defaultSegment = `{
 }`;
 
 const schedulerStatuses = ["all", "scheduled", "pending", "running", "paused", "completed", "cancelled", "failed"];
+const API_REQUEST_TIMEOUT_MS = 15000;
 
 const displayText = (value, fallback = "") => {
   if (value === undefined || value === null) {
@@ -88,6 +89,7 @@ const CampaignForm = () => {
   const [formData, setFormData] = useState({
     email: "",
     subject: "",
+    preheader: "",
     campaignName: "",
     campaignType: "",
     templateSlug: "",
@@ -107,6 +109,7 @@ const CampaignForm = () => {
   const [loading, setLoading] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [templateLoading, setTemplateLoading] = useState(false);
+  const [templateError, setTemplateError] = useState("");
   const [campaigns, setCampaigns] = useState([]);
   const [campaignsLoading, setCampaignsLoading] = useState(false);
   const [campaignStatus, setCampaignStatus] = useState("all");
@@ -120,10 +123,20 @@ const CampaignForm = () => {
   const fetchTemplates = async () => {
     try {
       setTemplateLoading(true);
-      const response = await axios.get(apiUrl("/api/templates"));
+      setTemplateError("");
+      const response = await axios.get(apiUrl("/api/templates"), {
+        timeout: API_REQUEST_TIMEOUT_MS
+      });
       setTemplates(response.data.templates || []);
     } catch (error) {
-      console.log(error);
+      const message = error.response?.data?.message || error.message || "Template fetch failed";
+      console.log("Campaign template fetch failed:", {
+        status: error.response?.status,
+        message,
+        response: error.response?.data,
+        error
+      });
+      setTemplateError(message);
     } finally {
       setTemplateLoading(false);
     }
@@ -229,6 +242,9 @@ const CampaignForm = () => {
     campaignName: formData.campaignName,
     campaignType: formData.campaignType,
     templateSlug: formData.templateSlug,
+    variables: {
+      preheader: formData.preheader || undefined,
+    },
     senderEmail: formData.senderEmail || undefined,
     replyTo: formData.replyTo || formData.senderEmail || undefined,
     scheduledAt: formData.scheduledAt || undefined,
@@ -269,6 +285,7 @@ const CampaignForm = () => {
     setFormData({
       email: "",
       subject: "",
+      preheader: "",
       campaignName: "",
       campaignType: "",
       templateSlug: "",
@@ -288,7 +305,12 @@ const CampaignForm = () => {
       setLoading(true);
 
       if (sendMode === "single") {
-        await axios.post(apiUrl("/api/send-email"), formData);
+        await axios.post(apiUrl("/api/send-email"), {
+          ...formData,
+          variables: {
+            preheader: formData.preheader || undefined,
+          },
+        });
         alert("Campaign submitted successfully!");
       } else {
         const response = await axios.post(
@@ -364,6 +386,11 @@ const CampaignForm = () => {
                   </option>
                 ))}
               </select>
+              {templateError && (
+                <p className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+                  Templates could not be fetched: {templateError}
+                </p>
+              )}
             </Field>
 
             <Field label="Subject">
@@ -374,6 +401,17 @@ const CampaignForm = () => {
                 value={formData.subject}
                 onChange={handleChange}
                 required
+                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </Field>
+
+            <Field label="Preheader Text">
+              <input
+                type="text"
+                name="preheader"
+                placeholder="Grant application is now open. Check eligibility today."
+                value={formData.preheader}
+                onChange={handleChange}
                 className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </Field>

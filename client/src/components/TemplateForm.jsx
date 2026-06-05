@@ -83,10 +83,20 @@ const displayText = (value, fallback = "") => {
 
 const templateText = (template = {}, key, fallback = "") => displayText(template?.[key], fallback);
 
+const templateIdentifier = (template = {}) => (
+  templateText(template, "_id") ||
+  templateText(template, "id") ||
+  templateText(template, "uuid") ||
+  templateText(template, "mongoId") ||
+  templateText(template, "slug")
+);
+
 const starterSource = {
   version: 1,
   theme: {
-    width: 600,
+    width: 300,
+    desktopImageWidth: 240,
+    bannerWidth: 240,
     backgroundColor: "#f8fafc",
     contentColor: "#ffffff",
     primaryColor: "#178218",
@@ -150,6 +160,80 @@ const starterSource = {
 const emptyBuilderSource = {
   ...starterSource,
   blocks: []
+};
+
+const AUTO_DRAFT_STORAGE_KEY = "template-studio:auto-draft";
+const AUTO_DRAFT_MAX_CHARS = 750000;
+
+const isStorageQuotaError = (error) => (
+  error instanceof DOMException &&
+  (error.name === "QuotaExceededError" || error.name === "NS_ERROR_DOM_QUOTA_REACHED")
+);
+
+const compactDraftPayload = (draftPayload) => {
+  if (draftPayload.mode === "builder") {
+    return {
+      mode: "builder",
+      template: {
+        name: draftPayload.template?.name || "",
+        slug: draftPayload.template?.slug || "",
+        subject: draftPayload.template?.subject || "",
+        status: "draft"
+      },
+      omittedLargeContent: true
+    };
+  }
+
+  return {
+    mode: "raw",
+    rawTemplate: {
+      name: draftPayload.rawTemplate?.name || "",
+      slug: draftPayload.rawTemplate?.slug || "",
+      subject: draftPayload.rawTemplate?.subject || "",
+      status: "draft"
+    },
+    omittedLargeContent: true
+  };
+};
+
+const getBoxPadding = (props = {}, fallback = "0") => {
+  const top = props.paddingTop;
+  const right = props.paddingRight;
+  const bottom = props.paddingBottom;
+  const left = props.paddingLeft;
+  const hasSidePadding = [top, right, bottom, left].some((value) => value !== undefined && value !== "");
+
+  if (hasSidePadding) {
+    return `${Number(top ?? 0)}px ${Number(right ?? 0)}px ${Number(bottom ?? 0)}px ${Number(left ?? 0)}px`;
+  }
+
+  return props.padding || fallback;
+};
+
+const getBoxMargin = (props = {}, fallback = "0") => {
+  const top = props.marginTop;
+  const right = props.marginRight;
+  const bottom = props.marginBottom;
+  const left = props.marginLeft;
+  const hasSideMargin = [top, right, bottom, left].some((value) => value !== undefined && value !== "");
+
+  if (hasSideMargin) {
+    return `${Number(top ?? 0)}px ${Number(right ?? 0)}px ${Number(bottom ?? 0)}px ${Number(left ?? 0)}px`;
+  }
+
+  return props.margin || fallback;
+};
+
+const templateAssetUrl = (path) => apiUrl(`/template-assets/${path}`);
+
+const socialLogoUrls = {
+  facebook: templateAssetUrl("social-logos/facebook.svg"),
+  instagram: templateAssetUrl("social-logos/instagram.svg"),
+  linkedin: templateAssetUrl("social-logos/linkedin.svg"),
+  youtube: templateAssetUrl("social-logos/youtube.svg"),
+  x: templateAssetUrl("social-logos/x.svg"),
+  twitter: templateAssetUrl("social-logos/x.svg"),
+  whatsapp: templateAssetUrl("social-logos/whatsapp.svg")
 };
 
 const predefinedTemplates = [
@@ -493,6 +577,85 @@ const predefinedTemplates = [
   }
 ];
 
+const createPlaceholderImage = (label, width = 600, height = 320) => {
+  const safeLabel = String(label)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="#f1f5f9"/><rect x="12" y="12" width="${width - 24}" height="${height - 24}" rx="8" fill="none" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="8 8"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#64748b">${safeLabel}</text></svg>`;
+
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+};
+
+const replaceLegacyPlaceholderUrl = (value) => {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  return value.replace(
+    /(?:https?:\/\/via\.placeholder\.com\/)?(\d+)x(\d+)\.png\?text=([^"'\s<)]+)/gi,
+    (match, width, height, label) => {
+      if (!match.includes("placeholder.com") && match !== value) {
+        return match;
+      }
+
+      return createPlaceholderImage(
+        decodeURIComponent(label).replace(/\+/g, " "),
+        Number(width),
+        Number(height)
+      );
+    }
+  );
+};
+
+const normalizeLegacyPlaceholderImages = (value) => {
+  if (Array.isArray(value)) {
+    return value.map(normalizeLegacyPlaceholderImages);
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, normalizeLegacyPlaceholderImages(entry)])
+    );
+  }
+
+  return replaceLegacyPlaceholderUrl(value);
+};
+
+const THANK_YOU_THEME_FIELDS = [
+  "thankYouBackgroundColor",
+  "thankYouTitleColor",
+  "thankYouTextColor",
+  "thankYouBorderColor",
+  "thankYouTitle",
+  "thankYouText"
+];
+
+const pickThankYouThemeFields = (theme = {}) => (
+  Object.fromEntries(
+    THANK_YOU_THEME_FIELDS
+      .filter((key) => theme[key] !== undefined && theme[key] !== "")
+      .map((key) => [key, theme[key]])
+  )
+);
+
+const hydrateThankYouThemeFields = (templateRecord = {}) => ({
+  ...(templateRecord.sourceJson || {}),
+  theme: {
+    ...(templateRecord.sourceJson?.theme || {}),
+    ...pickThankYouThemeFields(templateRecord)
+  }
+});
+
+const templateSaveErrorMessage = (error) => {
+  if (!error.response && error.message === "Network Error") {
+    return "Template save failed because the API request was blocked or unreachable. In local dev, restart Vite so /api requests use the proxy. If calling localhost:5000 directly, allow PUT in the backend CORS methods.";
+  }
+
+  return error.response?.data?.message || "Template save failed";
+};
+
 const blockPresets = {
   heading: {
     type: "heading",
@@ -514,10 +677,14 @@ const blockPresets = {
   image: {
     type: "image",
     props: {
-      src: "https://via.placeholder.com/600x320.png?text=Campaign+Image",
+      src: createPlaceholderImage("Campaign Image", 600, 320),
       alt: "Campaign image",
-      width: 600,
-      height: 320,
+      width: 240,
+      height: 120,
+      bannerWidth: 240,
+      bannerHeight: 120,
+      imageWidth: 240,
+      imageHeight: 120,
       href: "{{formHtmlUrl}}"
     }
   },
@@ -599,7 +766,7 @@ const blockPresets = {
   logoHeader: {
     type: "logoHeader",
     props: {
-      logoUrl: "https://via.placeholder.com/180x60.png?text=Logo",
+      logoUrl: createPlaceholderImage("Logo", 180, 60),
       logoAlt: "Logo",
       logoWidth: 140,
       title: "Brand Header",
@@ -609,7 +776,7 @@ const blockPresets = {
   productCard: {
     type: "productCard",
     props: {
-      imageUrl: "https://via.placeholder.com/600x320.png?text=Product",
+      imageUrl: createPlaceholderImage("Product", 600, 320),
       title: "Product Name",
       text: "Describe your product, offer, or service.",
       price: "$49",
@@ -690,8 +857,8 @@ const blockPresets = {
     type: "carousel",
     props: {
       slides: [
-        { imageUrl: "https://via.placeholder.com/600x260.png?text=Slide+1", title: "First slide" },
-        { imageUrl: "https://via.placeholder.com/600x260.png?text=Slide+2", title: "Second slide" }
+        { imageUrl: createPlaceholderImage("Slide 1", 600, 260), title: "First slide" },
+        { imageUrl: createPlaceholderImage("Slide 2", 600, 260), title: "Second slide" }
       ]
     }
   },
@@ -750,7 +917,8 @@ const blockPresets = {
   divider: {
     type: "divider",
     props: {
-      color: "#e5e7eb"
+      color: "#e5e7eb",
+      margin: "12px 0"
     }
   },
   spacer: {
@@ -899,6 +1067,80 @@ const blockPresets = {
       ]
     }
   },
+  eligibilityForm: {
+    type: "form",
+    props: {
+      title: "Check your eligibility",
+      description: "Takes less than 30 seconds - no commitment required",
+      submitText: "Check now",
+      formBackgroundColor: "#292b28",
+      borderColor: "#9ca3af",
+      borderWidth: 1,
+      radius: 24,
+      padding: "48px 40px 34px",
+      topAccentColor: "#21c98b",
+      progressDots: true,
+      progressColor: "#b84cff",
+      progressMutedColor: "#b7c4c8",
+      titleColor: "#b84cff",
+      titleSize: 28,
+      titleWeight: "800",
+      titleAlign: "center",
+      descriptionColor: "#d8d2bf",
+      descriptionSize: 16,
+      descriptionWeight: "700",
+      descriptionAlign: "center",
+      fieldTopGap: 36,
+      fieldGap: 22,
+      labelGap: 8,
+      inputLabelColor: "#d8d2bf",
+      inputValueColor: "#8c9497",
+      inputBackgroundColor: "transparent",
+      inputBackgroundTransparent: true,
+      inputBorderColor: "#4b4f4d",
+      inputBorderWidth: 1,
+      inputRadius: 7,
+      inputHeight: 45,
+      inputFontSize: 18,
+      inputWidth: "100%",
+      dividerText: "Instant results",
+      dividerColor: "#525654",
+      dividerTextColor: "#b8b0a1",
+      buttonTopGap: 24,
+      buttonAlign: "center",
+      buttonWidth: "100%",
+      buttonHeight: 44,
+      buttonColor: "transparent",
+      buttonBackgroundTransparent: true,
+      buttonBorderColor: "#626866",
+      buttonBorderWidth: 1,
+      buttonRadius: 8,
+      buttonTextColor: "#ffffff",
+      buttonFontSize: 18,
+      buttonFontWeight: "800",
+      trustBadges: ["256-bit secure", "No spam", "Instant check"],
+      trustColor: "#2ad58f",
+      trustTextColor: "#b8b0a1",
+      fields: [
+        {
+          name: "companyName",
+          label: "Company name",
+          type: "text",
+          required: true,
+          placeholder: "e.g. Acme Corp",
+          helperText: "Enter your registered company name"
+        },
+        {
+          name: "mobileNumber",
+          label: "Mobile number",
+          type: "tel",
+          required: true,
+          placeholder: "e.g. +91 98765 43210",
+          helperText: "We'll send your results via SMS"
+        }
+      ]
+    }
+  },
   social: {
     type: "social",
     props: {
@@ -915,11 +1157,11 @@ const blockPresets = {
       iconSize: 18,
       radius: 999,
       links: [
-        { label: "Facebook", href: "https://facebook.com", icon: "f", iconKey: "facebook" },
-        { label: "Instagram", href: "https://instagram.com", icon: "ig", iconKey: "instagram" },
-        { label: "LinkedIn", href: "https://linkedin.com", icon: "in", iconKey: "linkedin" },
-        { label: "YouTube", href: "https://youtube.com", icon: "yt", iconKey: "youtube" },
-        { label: "WhatsApp", href: "https://wa.me/", icon: "wa", iconKey: "whatsapp" }
+        { label: "Facebook", href: "https://facebook.com", icon: "f", iconKey: "facebook", iconUrl: socialLogoUrls.facebook },
+        { label: "Instagram", href: "https://instagram.com", icon: "ig", iconKey: "instagram", iconUrl: socialLogoUrls.instagram },
+        { label: "X", href: "https://x.com", icon: "x", iconKey: "x", iconUrl: socialLogoUrls.x },
+        { label: "YouTube", href: "https://youtube.com", icon: "yt", iconKey: "youtube", iconUrl: socialLogoUrls.youtube },
+        { label: "WhatsApp", href: "https://wa.me/", icon: "wa", iconKey: "whatsapp", iconUrl: socialLogoUrls.whatsapp }
       ]
     }
   },
@@ -963,7 +1205,7 @@ const componentGroups = [
   },
   {
     title: "Forms",
-    items: ["form", "leadForm", "contactForm", "registrationForm", "appointmentForm", "survey", "rating", "nps"]
+    items: ["form", "eligibilityForm", "leadForm", "contactForm", "registrationForm", "appointmentForm", "survey", "rating", "nps"]
   },
   {
     title: "Shapes",
@@ -987,6 +1229,7 @@ const componentLabels = {
   footer: "Unsubscribe",
   rawHtml: "HTML",
   form: "Form",
+  eligibilityForm: "Eligibility",
   leadForm: "Lead",
   contactForm: "Contact",
   registrationForm: "Register",
@@ -1027,6 +1270,7 @@ const componentDescriptions = {
   footer: "Unsubscribe link",
   rawHtml: "Custom code",
   form: "Basic fields",
+  eligibilityForm: "Eligibility check",
   leadForm: "Lead capture",
   contactForm: "Message form",
   registrationForm: "Signup form",
@@ -1192,6 +1436,7 @@ const TemplateForm = () => {
   const [previewError, setPreviewError] = useState("");
   const [previewValidation, setPreviewValidation] = useState(null);
   const [listLoading, setListLoading] = useState(false);
+  const [listError, setListError] = useState("");
   const [jsonError, setJsonError] = useState("");
   const [history, setHistory] = useState([]);
   const [future, setFuture] = useState([]);
@@ -1334,11 +1579,40 @@ const TemplateForm = () => {
           }
         };
 
-    localStorage.setItem("template-studio:auto-draft", JSON.stringify({
+    const savedAt = new Date();
+    const snapshot = {
       ...draftPayload,
-      savedAt: new Date().toISOString()
-    }));
-    setDraftSavedAt(new Date().toLocaleTimeString([], {
+      savedAt: savedAt.toISOString()
+    };
+    const serializedSnapshot = JSON.stringify(snapshot);
+
+    try {
+      if (serializedSnapshot.length > AUTO_DRAFT_MAX_CHARS) {
+        throw new DOMException("Auto-draft is too large for local storage.", "QuotaExceededError");
+      }
+
+      localStorage.setItem(AUTO_DRAFT_STORAGE_KEY, serializedSnapshot);
+    } catch (error) {
+      if (!isStorageQuotaError(error)) {
+        throw error;
+      }
+
+      try {
+        localStorage.setItem(AUTO_DRAFT_STORAGE_KEY, JSON.stringify({
+          ...compactDraftPayload(draftPayload),
+          savedAt: savedAt.toISOString()
+        }));
+      } catch (fallbackError) {
+        if (!isStorageQuotaError(fallbackError)) {
+          throw fallbackError;
+        }
+
+        localStorage.removeItem(AUTO_DRAFT_STORAGE_KEY);
+        console.warn("Template auto-draft skipped because browser storage is full.");
+      }
+    }
+
+    setDraftSavedAt(savedAt.toLocaleTimeString([], {
       hour: "2-digit",
       minute: "2-digit"
     }));
@@ -1368,10 +1642,20 @@ const TemplateForm = () => {
   const fetchTemplates = async () => {
     try {
       setListLoading(true);
-      const response = await axios.get(apiUrl("/api/templates"));
+      setListError("");
+      const response = await axios.get(apiUrl("/api/templates"), {
+        timeout: 15000
+      });
       setTemplates(response.data.templates || []);
     } catch (error) {
-      console.log(error);
+      const message = error.response?.data?.message || error.message || "Template fetch failed";
+      console.log("Template fetch failed:", {
+        status: error.response?.status,
+        message,
+        response: error.response?.data,
+        error
+      });
+      setListError(message);
     } finally {
       setListLoading(false);
     }
@@ -1400,7 +1684,7 @@ const TemplateForm = () => {
     }
 
     try {
-      const response = await axios.get(apiUrl(`/api/templates/${templateId}/versions`));
+      const response = await axios.get(apiUrl(`/api/templates/${encodeURIComponent(templateId)}/versions`));
       setVersions(response.data.versions || []);
     } catch (error) {
       console.log(error);
@@ -1415,14 +1699,15 @@ const TemplateForm = () => {
 
   const syncJson = (nextSourceJson, options = {}) => {
     const { record = true } = options;
+    const normalizedSourceJson = normalizeLegacyPlaceholderImages(nextSourceJson);
 
     if (record) {
       setHistory((items) => [...items.slice(-30), sourceJson]);
       setFuture([]);
     }
 
-    setSourceJson(nextSourceJson);
-    setJsonText(JSON.stringify(nextSourceJson, null, 2));
+    setSourceJson(normalizedSourceJson);
+    setJsonText(JSON.stringify(normalizedSourceJson, null, 2));
     setJsonError("");
   };
 
@@ -1719,6 +2004,7 @@ const TemplateForm = () => {
         sourceJson: previewSource
       });
 
+      setPreview(response.data.rendered || response.data.compiled || localRendered);
       setPreviewValidation(response.data.validation || null);
     } catch (error) {
       console.log(error);
@@ -1874,20 +2160,25 @@ const TemplateForm = () => {
       }
 
       if (mode === "builder") {
-        const response = await axios.post(apiUrl("/api/templates"), {
+        const nextBuilderPayload = {
           ...builderPayload(nextStatus),
+          ...pickThankYouThemeFields(sourceJson.theme),
           isActive: true
-        });
+        };
+        const response = activeTemplateId
+          ? await axios.put(apiUrl(`/api/templates/${encodeURIComponent(activeTemplateId)}`), nextBuilderPayload)
+          : await axios.post(apiUrl("/api/templates"), nextBuilderPayload);
 
-        setActiveTemplateId(response.data.template?._id || "");
+        setActiveTemplateId(templateIdentifier(response.data.template) || activeTemplateId || "");
         setPreviewValidation(response.data.validation || validation || null);
+        const rendered = response.data.template || renderStudioDocument(nextBuilderPayload.sourceJson);
         setPreview({
-          html: response.data.template?.html || "",
-          amp: response.data.template?.amp || "",
-          formHtml: response.data.template?.formHtml || "",
-          text: response.data.template?.text || ""
+          html: rendered.html || "",
+          amp: rendered.amp || "",
+          formHtml: rendered.formHtml || "",
+          text: rendered.text || ""
         });
-        await fetchVersions(response.data.template?._id);
+        await fetchVersions(templateIdentifier(response.data.template) || activeTemplateId);
       } else {
         const response = await axios.post(apiUrl("/api/templates"), rawPayload(nextStatus));
         setPreviewValidation(response.data.validation || validation || null);
@@ -1916,7 +2207,7 @@ const TemplateForm = () => {
         error
       });
       setPreviewValidation(error.response?.data?.validation || previewValidation);
-      alert(error.response?.data?.message || "Template save failed");
+      alert(templateSaveErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -1985,9 +2276,16 @@ const TemplateForm = () => {
   };
 
   const loadSavedTemplate = async (templateId) => {
+    const resolvedTemplateId = typeof templateId === "object" ? templateIdentifier(templateId) : templateId;
+
+    if (!resolvedTemplateId) {
+      alert("Template id or slug is missing.");
+      return;
+    }
+
     try {
       setLoading(true);
-      const response = await axios.get(apiUrl(`/api/templates/${templateId}`));
+      const response = await axios.get(apiUrl(`/api/templates/${encodeURIComponent(resolvedTemplateId)}`));
       const savedTemplate = response.data.template;
 
       if (!savedTemplate?.sourceJson) {
@@ -2001,10 +2299,12 @@ const TemplateForm = () => {
         subject: templateText(savedTemplate, "subject"),
         status: templateText(savedTemplate, "status", "draft")
       });
-      syncJson(savedTemplate.sourceJson);
-      setSelectedBlockId(savedTemplate.sourceJson.blocks?.[0]?.id || "");
-      setActiveTemplateId(savedTemplate._id);
-      await fetchVersions(savedTemplate._id);
+      const hydratedSourceJson = hydrateThankYouThemeFields(savedTemplate);
+      syncJson(hydratedSourceJson);
+      setSelectedBlockId(hydratedSourceJson.blocks?.[0]?.id || "");
+      const savedIdentifier = templateIdentifier(savedTemplate);
+      setActiveTemplateId(savedIdentifier);
+      await fetchVersions(savedIdentifier);
       setMode("builder");
       setTemplateWorkspace("builder");
     } catch (error) {
@@ -2022,7 +2322,7 @@ const TemplateForm = () => {
 
     try {
       setLoading(true);
-      const response = await axios.post(apiUrl(`/api/templates/${activeTemplateId}/versions/${version}/restore`));
+      const response = await axios.post(apiUrl(`/api/templates/${encodeURIComponent(activeTemplateId)}/versions/${version}/restore`));
       const restoredTemplate = response.data.template;
 
       setTemplate({
@@ -2031,8 +2331,9 @@ const TemplateForm = () => {
         subject: templateText(restoredTemplate, "subject"),
         status: templateText(restoredTemplate, "status", "draft")
       });
-      syncJson(restoredTemplate.sourceJson);
-      setSelectedBlockId(restoredTemplate.sourceJson?.blocks?.[0]?.id || "");
+      const hydratedSourceJson = hydrateThankYouThemeFields(restoredTemplate);
+      syncJson(hydratedSourceJson);
+      setSelectedBlockId(hydratedSourceJson.blocks?.[0]?.id || "");
       await fetchVersions(restoredTemplate._id);
       alert("Template version restored");
     } catch (error) {
@@ -2128,6 +2429,7 @@ const TemplateForm = () => {
       <TemplatesHomePage
         templates={templates}
         loading={listLoading}
+        error={listError}
         onNewTemplate={loadStarter}
         onLoadSavedTemplate={loadSavedTemplate}
       />
@@ -2551,7 +2853,8 @@ const EmailBodyStylePanel = ({
   updateTemplateField,
   setTemplate,
   sourceJson,
-  updateTheme
+  updateTheme,
+  editorConfig
 }) => {
   const theme = sourceJson.theme || {};
   const [activeDevice, setActiveDevice] = useState("desktop");
@@ -2586,7 +2889,7 @@ const EmailBodyStylePanel = ({
         </div>
       </div>
       {activeDevice === "desktop" ? (
-        <DesktopEmailBodyStyle theme={theme} updateTheme={updateTheme} fontOptions={fontOptions} />
+        <DesktopEmailBodyStyle theme={theme} updateTheme={updateTheme} fontOptions={fontOptions} editorConfig={editorConfig} />
       ) : (
         <MobileEmailBodyStyle theme={theme} updateTheme={updateTheme} />
       )}
@@ -2594,7 +2897,45 @@ const EmailBodyStylePanel = ({
   );
 };
 
-const DesktopEmailBodyStyle = ({ theme, updateTheme, fontOptions }) => (
+const DesktopEmailBodyStyle = ({ theme, updateTheme, fontOptions, editorConfig }) => {
+  const [backgroundUploadStatus, setBackgroundUploadStatus] = useState("");
+
+  const uploadBackgroundImage = async (event) => {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      setBackgroundUploadStatus(`Compressing ${formatFileSize(file.size)} image...`);
+      const resizedImage = await resizeImageFile(file);
+
+      setBackgroundUploadStatus(`Uploading compressed image (${formatFileSize(resizedImage.outputSize)})...`);
+      const response = await axios.post(getAssetUploadUrl(editorConfig), {
+        image: resizedImage.dataUrl,
+        fileName: file.name.replace(/\.[^.]+$/, ".jpg"),
+        category: "backgrounds"
+      });
+      const assetUrl = response.data?.asset?.url || response.data?.url;
+
+      if (!assetUrl || /^data:image\//i.test(assetUrl)) {
+        throw new Error("Upload response did not include a hosted asset URL.");
+      }
+
+      updateTheme("backgroundImageUrl", assetUrl);
+      setBackgroundUploadStatus(`Shell background image uploaded (${formatFileSize(resizedImage.outputSize)}).`);
+    } catch (error) {
+      console.log(error);
+      setBackgroundUploadStatus(error.response?.status === 413
+        ? "Shell background image is still too large after compression. Try a smaller image."
+        : "Shell background image upload failed. Check the asset endpoint and try again.");
+    } finally {
+      event.target.value = "";
+    }
+  };
+
+  return (
   <div>
     <BodyStyleAccordion title="Font">
       <label className="block">
@@ -2612,6 +2953,88 @@ const DesktopEmailBodyStyle = ({ theme, updateTheme, fontOptions }) => (
         <ColorLine label="Email body color" value={theme.contentColor || "#ffffff"} onChange={(value) => updateTheme("contentColor", value)} />
         <ColorLine label="Accent color" value={theme.primaryColor || "#0f766e"} onChange={(value) => updateTheme("primaryColor", value)} />
         <ColorLine label="Muted text color" value={theme.mutedColor || "#64748b"} onChange={(value) => updateTheme("mutedColor", value)} />
+      </div>
+    </BodyStyleAccordion>
+
+    <BodyStyleAccordion title="Thank You">
+      <div className="grid gap-3">
+        <InputField label="Title" value={theme.thankYouTitle || "Thank you"} onChange={(event) => updateTheme("thankYouTitle", event.target.value)} />
+        <InputField label="Message" value={theme.thankYouText || "Your response was submitted."} onChange={(event) => updateTheme("thankYouText", event.target.value)} />
+        <div className="grid grid-cols-2 gap-3">
+          <ColorLine label="Background" value={theme.thankYouBackgroundColor || "#ecfdf5"} onChange={(value) => updateTheme("thankYouBackgroundColor", value)} />
+          <ColorLine label="Border" value={theme.thankYouBorderColor || "#34d399"} onChange={(value) => updateTheme("thankYouBorderColor", value)} />
+          <ColorLine label="Title color" value={theme.thankYouTitleColor || "#047857"} onChange={(value) => updateTheme("thankYouTitleColor", value)} />
+          <ColorLine label="Message color" value={theme.thankYouTextColor || "#064e3b"} onChange={(value) => updateTheme("thankYouTextColor", value)} />
+        </div>
+        <div
+          className="rounded-md border p-4 text-center"
+          style={{
+            backgroundColor: theme.thankYouBackgroundColor || "#ecfdf5",
+            borderColor: theme.thankYouBorderColor || "#34d399"
+          }}
+        >
+          <div className="text-sm font-extrabold" style={{ color: theme.thankYouTitleColor || "#047857" }}>
+            {theme.thankYouTitle || "Thank you"}
+          </div>
+          <div className="mt-1 text-xs font-semibold" style={{ color: theme.thankYouTextColor || "#064e3b" }}>
+            {theme.thankYouText || "Your response was submitted."}
+          </div>
+        </div>
+      </div>
+    </BodyStyleAccordion>
+
+    <BodyStyleAccordion title="Shell Background Image">
+      <div className="grid gap-3">
+        <InputField label="Shell Image URL" value={theme.backgroundImageUrl || ""} onChange={(event) => updateTheme("backgroundImageUrl", event.target.value)} placeholder="https://example.com/background.jpg" />
+        <label className="block">
+          <span className="mb-2 block text-sm font-semibold text-slate-700">Upload Shell Image</span>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={uploadBackgroundImage}
+            className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-[#f2efff] file:px-3 file:py-2 file:text-sm file:font-semibold file:text-[#6c4cff]"
+          />
+          {backgroundUploadStatus && <span className="mt-2 block text-xs font-semibold text-slate-500">{backgroundUploadStatus}</span>}
+        </label>
+        {theme.backgroundImageUrl && (
+          <button
+            type="button"
+            onClick={() => updateTheme("backgroundImageUrl", "")}
+            className="justify-self-start rounded-md border border-rose-200 px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50"
+          >
+            Remove shell background image
+          </button>
+        )}
+        <InputField label="Overlay" value={theme.backgroundOverlayColor || ""} onChange={(event) => updateTheme("backgroundOverlayColor", event.target.value)} placeholder="rgba(0,0,0,0.25)" />
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block text-sm font-semibold text-slate-700">
+            Size
+            <select value={theme.backgroundImageSize || "cover"} onChange={(event) => updateTheme("backgroundImageSize", event.target.value)} className={`mt-2 ${inputClass}`}>
+              <option value="cover">Cover</option>
+              <option value="contain">Contain</option>
+              <option value="auto">Original</option>
+            </select>
+          </label>
+          <label className="block text-sm font-semibold text-slate-700">
+            Position
+            <select value={theme.backgroundImagePosition || "center"} onChange={(event) => updateTheme("backgroundImagePosition", event.target.value)} className={`mt-2 ${inputClass}`}>
+              <option value="center">Center</option>
+              <option value="top">Top</option>
+              <option value="bottom">Bottom</option>
+              <option value="left">Left</option>
+              <option value="right">Right</option>
+            </select>
+          </label>
+          <label className="block text-sm font-semibold text-slate-700">
+            Repeat
+            <select value={theme.backgroundImageRepeat || "no-repeat"} onChange={(event) => updateTheme("backgroundImageRepeat", event.target.value)} className={`mt-2 ${inputClass}`}>
+              <option value="no-repeat">No repeat</option>
+              <option value="repeat">Repeat</option>
+              <option value="repeat-x">Repeat X</option>
+              <option value="repeat-y">Repeat Y</option>
+            </select>
+          </label>
+        </div>
       </div>
     </BodyStyleAccordion>
 
@@ -2650,6 +3073,12 @@ const DesktopEmailBodyStyle = ({ theme, updateTheme, fontOptions }) => (
     <BodyStyleAccordion title="Padding & Dimension">
       <div className="grid gap-4">
         <InputField label="Dimension" type="number" value={theme.width || 600} onChange={(event) => updateTheme("width", Number(event.target.value))} />
+        <InputField label="Desktop image width" type="number" value={theme.desktopImageWidth || theme.bannerWidth || 240} onChange={(event) => {
+          const value = Number(event.target.value);
+          updateTheme("desktopImageWidth", value);
+          updateTheme("bannerWidth", value);
+          updateTheme("imageWidth", value);
+        }} />
         <InputField label="Block padding" value={theme.blockPadding ?? "0"} onChange={(event) => updateTheme("blockPadding", event.target.value)} />
         <InputField label="Page padding" value={theme.pagePadding ?? "0"} onChange={(event) => updateTheme("pagePadding", event.target.value)} />
         <InputField label="Body padding" value={theme.padding ?? "0"} onChange={(event) => updateTheme("padding", event.target.value)} />
@@ -2657,7 +3086,8 @@ const DesktopEmailBodyStyle = ({ theme, updateTheme, fontOptions }) => (
       </div>
     </BodyStyleAccordion>
   </div>
-);
+  );
+};
 
 const MobileEmailBodyStyle = ({ theme, updateTheme }) => (
   <div>
@@ -2881,9 +3311,9 @@ const FloatingBlockLibrary = ({
                   {!templates.length && <p className="rounded-md bg-slate-50 p-3 text-sm font-semibold text-slate-500">No saved templates yet.</p>}
                   {templates.slice(0, 8).map((item) => (
                     <button
-                      key={item._id}
+                      key={templateIdentifier(item) || templateText(item, "name", "saved-template")}
                       type="button"
-                      onClick={() => loadSavedTemplate(item._id)}
+                      onClick={() => loadSavedTemplate(item)}
                       className="rounded-lg border border-slate-200 bg-white p-3 text-left shadow-sm hover:border-[#0f766e]"
                     >
                       <p className="text-sm font-black text-slate-950">{templateText(item, "name", "Untitled template")}</p>
@@ -3007,6 +3437,7 @@ const BuilderSidePanel = ({
           setTemplate={setTemplate}
           sourceJson={sourceJson}
           updateTheme={updateTheme}
+          editorConfig={editorConfig}
         />
       )}
 
@@ -3126,14 +3557,14 @@ const TemplateStatusMenu = ({
             )}
             {(groups[openStatus] || []).map((item) => (
               <button
-                key={item._id}
+                key={templateIdentifier(item) || templateText(item, "name", "saved-template")}
                 type="button"
                 onClick={() => {
-                  loadSavedTemplate(item._id);
+                  loadSavedTemplate(item);
                   setOpenStatus("");
                 }}
                 className={`w-full rounded-md border p-3 text-left hover:border-[#6c4cff] hover:bg-[#f6f3ff] ${
-                  activeTemplateId === item._id
+                  activeTemplateId === templateIdentifier(item)
                     ? "border-[#6c4cff] bg-[#f6f3ff]"
                     : "border-slate-200 bg-white"
                 }`}
@@ -3381,7 +3812,7 @@ const LiveCanvasPreview = ({ markup, rawMarkup, mode, viewport }) => {
           Export
         </button>
       </div>
-      <div className={isMobile ? "mx-auto max-w-[410px] rounded bg-white p-3 shadow-sm" : "rounded bg-white shadow-sm"}>
+      <div className={isMobile ? "preview-mobile mx-auto max-w-[410px] rounded bg-white p-3 shadow-sm" : "preview-desktop rounded bg-white shadow-sm"}>
         <iframe
           title={`${labels[mode] || "Live"} canvas output`}
           srcDoc={markup}
@@ -3635,6 +4066,7 @@ const WidgetGallery = ({ labels, addBlock }) => {
 const FormsGallery = ({ labels, addBlock }) => {
   const [mode, setMode] = useState("simple");
   const forms = [
+    { type: "eligibilityForm", title: "Eligibility Check" },
     { type: "form", title: "Event Registration" },
     { type: "productFeedback", title: "Referral" },
     { type: "survey", title: "Feedback Survey" },
@@ -3724,6 +4156,38 @@ const StartFormPreview = () => (
 );
 
 const FormPreview = ({ variant }) => {
+  if (variant === "eligibilityForm") {
+    return (
+      <div className="rounded-lg border border-slate-400 bg-[#292b28] p-4">
+        <div className="mx-auto mb-3 flex w-14 items-center justify-center gap-1">
+          <span className="h-1.5 w-5 rounded-full bg-[#b84cff]" />
+          <span className="h-1.5 w-1.5 rounded-full bg-[#b7c4c8]" />
+          <span className="h-1.5 w-1.5 rounded-full bg-[#b7c4c8]" />
+        </div>
+        <div className="mx-auto h-3 w-32 rounded bg-[#b84cff]" />
+        <div className="mx-auto mt-2 h-2 w-40 rounded bg-[#d8d2bf]" />
+        <div className="mt-5 space-y-3">
+          <div>
+            <div className="mb-1 h-2 w-24 rounded bg-[#d8d2bf]" />
+            <div className="h-9 rounded border border-[#4b4f4d] bg-transparent" />
+            <div className="mt-1 h-2 w-32 rounded bg-[#8c9497]" />
+          </div>
+          <div>
+            <div className="mb-1 h-2 w-24 rounded bg-[#d8d2bf]" />
+            <div className="h-9 rounded border border-[#4b4f4d] bg-transparent" />
+            <div className="mt-1 h-2 w-36 rounded bg-[#8c9497]" />
+          </div>
+        </div>
+        <div className="my-4 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+          <span className="h-px bg-[#525654]" />
+          <span className="text-[9px] font-bold text-[#b8b0a1]">Instant results</span>
+          <span className="h-px bg-[#525654]" />
+        </div>
+        <div className="h-9 rounded border border-[#626866] bg-transparent" />
+      </div>
+    );
+  }
+
   if (variant === "productFeedback") {
     return (
       <div className="space-y-3">
@@ -3960,6 +4424,7 @@ const templateCategories = ["All", ...new Set(predefinedTemplates.map((template)
 const TemplatesHomePage = ({
   templates,
   loading,
+  error,
   onNewTemplate,
   onLoadSavedTemplate
 }) => {
@@ -4000,13 +4465,19 @@ const TemplatesHomePage = ({
           </div>
         </div>
 
+        {error && (
+          <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+            Templates could not be fetched: {error}
+          </div>
+        )}
+
         {visibleTemplates.length ? (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             {visibleTemplates.map((item) => (
               <button
-                key={templateText(item, "_id", templateText(item, "slug", templateText(item, "name", "saved-template")))}
+                key={templateIdentifier(item) || templateText(item, "name", "saved-template")}
                 type="button"
-                onClick={() => onLoadSavedTemplate(templateText(item, "_id"))}
+                onClick={() => onLoadSavedTemplate(item)}
                 className="group overflow-hidden rounded-lg border border-slate-200 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[#0f766e] hover:shadow-[0_18px_36px_rgba(15,23,42,0.10)]"
               >
                 <SavedTemplateCardImage template={item} />
@@ -4442,6 +4913,7 @@ const SelectedBlockPanel = ({
           updateFormField={updateFormField}
           addFormField={addFormField}
           removeFormField={removeFormField}
+          editorConfig={editorConfig}
         />
       </div>
     )}
@@ -4607,7 +5079,8 @@ const CanvasBlock = ({
             textAlign: props.align || "left",
             fontSize: `${props.fontSize || (block.type === "heading" ? 24 : 16)}px`,
             fontWeight: block.type === "heading" ? 700 : 400,
-            lineHeight: 1.45
+            lineHeight: props.lineHeight || 1.45,
+            padding: getBoxPadding(props, "0")
           }}
         >
           {replaceSampleValues(props.text || "")}
@@ -4658,7 +5131,11 @@ const CanvasBlock = ({
   }
 
   if (["form", "poll", "survey", "rating", "nps", "appointment", "booking", "quiz", "productFeedback", "rsvp"].includes(block.type)) {
-    const inputBackgroundColor = props.inputBackgroundColor || "#f8fafc";
+    const formBackgroundColor = props.formBackgroundTransparent ? "transparent" : (props.formBackgroundColor || "#ffffff");
+    const inputBackgroundColor = props.inputBackgroundTransparent ? "transparent" : (props.inputBackgroundColor || "#f8fafc");
+    const inputBorderStyle = `${Number(props.inputBorderWidth ?? 1)}px solid ${props.inputBorderColor || "#e2e8f0"}`;
+    const buttonBackgroundColor = props.buttonBackgroundTransparent ? "transparent" : (props.buttonColor || props.backgroundColor || theme.primaryColor || "#178218");
+    const trustBadges = Array.isArray(props.trustBadges) ? props.trustBadges : [];
     const showTitle = props.showTitle !== false;
     const showDescription = props.showDescription !== false;
     const hasHeader = showTitle || (showDescription && props.description);
@@ -4678,20 +5155,36 @@ const CanvasBlock = ({
     return (
       <div {...dragProps} className={commonClass}>
         <div
-          className="rounded-lg border border-slate-200"
+          className="rounded-lg"
           style={{
             padding: props.padding || "18px",
-            backgroundColor: props.formBackgroundColor || "#ffffff",
+            backgroundColor: formBackgroundColor,
             backgroundImage: props.backgroundImageUrl
               ? `${props.backgroundOverlayColor ? `linear-gradient(${props.backgroundOverlayColor}, ${props.backgroundOverlayColor}), ` : ""}url("${props.backgroundImageUrl}")`
               : undefined,
             backgroundSize: props.backgroundImageSize || "cover",
             backgroundPosition: props.backgroundImagePosition || "center",
             backgroundRepeat: props.backgroundImageRepeat || "no-repeat",
-            borderColor: props.borderColor || "#e2e8f0",
+            border: `${Number(props.borderWidth ?? 1)}px solid ${props.borderColor || "#e2e8f0"}`,
+            borderTop: props.topAccentColor ? `${Number(props.topAccentWidth ?? 4)}px solid ${props.topAccentColor}` : undefined,
             borderRadius: `${props.radius || 8}px`
           }}
         >
+          {props.progressDots && (
+            <div className="mb-4 flex items-center justify-center gap-2">
+              <span
+                className="h-2 rounded-full"
+                style={{ width: 26, backgroundColor: props.progressColor || theme.primaryColor || "#6c4cff" }}
+              />
+              {[1, 2].map((item) => (
+                <span
+                  key={item}
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: props.progressMutedColor || "#cbd5e1" }}
+                />
+              ))}
+            </div>
+          )}
           {showTitle && (
             <h3
               contentEditable
@@ -4756,10 +5249,11 @@ const CanvasBlock = ({
                 </div>
                 <div style={{ marginTop: `${Number(props.labelGap ?? 5)}px`, textAlign: props.inputAlign || "left" }}>
                   <div
-                    className="border border-slate-300"
+                    className="border-slate-300"
                     style={{
                       display: "inline-block",
                       backgroundColor: inputBackgroundColor,
+                      border: inputBorderStyle,
                       borderRadius: `${Number(props.inputRadius ?? 6)}px`,
                       width: props.inputWidth || "100%",
                       maxWidth: "100%",
@@ -4769,20 +5263,29 @@ const CanvasBlock = ({
                       fontWeight: props.inputFontWeight || 600
                     }}
                   >
-                    <span className="block px-3 py-2">{field.placeholder || ""}</span>
-                  </div>
+                  <span className="block px-3 py-2">{field.placeholder || ""}</span>
                 </div>
-              </label>
-            ))}
+                {field.helperText && (
+                  <p
+                    className="mt-2 text-xs font-semibold"
+                    style={{ color: props.helperTextColor || props.descriptionColor || props.textColor || "#64748b" }}
+                  >
+                    {field.helperText}
+                  </p>
+                )}
+              </div>
+            </label>
+          ))}
             {!props.fields && !props.questions && props.question && (
               <label className="block text-sm font-semibold text-slate-700">
                 {props.question}
                 <div style={{ marginTop: `${Number(props.labelGap ?? 5)}px`, textAlign: props.inputAlign || "left" }}>
                   <div
-                    className="border border-slate-300"
+                    className="border-slate-300"
                     style={{
                       display: "inline-block",
                       backgroundColor: inputBackgroundColor,
+                      border: inputBorderStyle,
                       borderRadius: `${Number(props.inputRadius ?? 6)}px`,
                       width: props.inputWidth || "100%",
                       maxWidth: "100%",
@@ -4790,12 +5293,29 @@ const CanvasBlock = ({
                       color: props.inputValueColor || props.inputTextColor || "#64748b",
                       fontSize: `${props.inputFontSize || 14}px`,
                       fontWeight: props.inputFontWeight || 600
-                    }}
-                  />
-                </div>
-              </label>
-            )}
+                  }}
+                />
+                {props.helperText && (
+                  <p
+                    className="mt-2 text-xs font-semibold"
+                    style={{ color: props.helperTextColor || props.descriptionColor || props.textColor || "#64748b" }}
+                  >
+                    {props.helperText}
+                  </p>
+                )}
+              </div>
+            </label>
+          )}
           </div>
+          {props.dividerText && (
+            <div className="my-5 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+              <span className="h-px" style={{ backgroundColor: props.dividerColor || "#e2e8f0" }} />
+              <span className="text-xs font-semibold" style={{ color: props.dividerTextColor || props.descriptionColor || "#64748b" }}>
+                {props.dividerText}
+              </span>
+              <span className="h-px" style={{ backgroundColor: props.dividerColor || "#e2e8f0" }} />
+            </div>
+          )}
           <div style={{ marginTop: `${Number(props.buttonTopGap ?? 12)}px`, textAlign: props.buttonAlign || props.align || "left" }}>
             <div
               contentEditable
@@ -4804,8 +5324,9 @@ const CanvasBlock = ({
               className="py-3 text-center text-sm font-bold text-white"
               style={{
                 display: "inline-block",
-                backgroundColor: props.buttonColor || props.backgroundColor || theme.primaryColor || "#178218",
+                backgroundColor: buttonBackgroundColor,
                 color: props.buttonTextColor || props.color || "#ffffff",
+                border: `${Number(props.buttonBorderWidth ?? 0)}px solid ${props.buttonBorderColor || "transparent"}`,
                 borderRadius: `${Number(props.buttonRadius ?? 6)}px`,
                 width: props.buttonWidth || "100%",
                 maxWidth: "100%",
@@ -4815,6 +5336,19 @@ const CanvasBlock = ({
               {props.submitText || "Submit"}
             </div>
           </div>
+          {trustBadges.length > 0 && (
+            <div
+              className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs font-semibold"
+              style={{ color: props.trustTextColor || props.descriptionColor || "#64748b" }}
+            >
+              {trustBadges.map((badge) => (
+                <span key={badge} className="inline-flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: props.trustColor || theme.primaryColor || "#0f766e" }} />
+                  {badge}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         {actions}
       </div>
@@ -4947,7 +5481,13 @@ const CanvasBlock = ({
   if (block.type === "divider") {
     return (
       <div {...dragProps} className={commonClass}>
-        <div className="h-px w-full" style={{ backgroundColor: props.color || "#e5e7eb" }} />
+        <div
+          className="h-px w-full"
+          style={{
+            backgroundColor: props.color || "#e5e7eb",
+            margin: getBoxMargin(props, "12px 0")
+          }}
+        />
         {actions}
       </div>
     );
@@ -5056,11 +5596,20 @@ const ImageCanvasBlock = ({ block, selected, updateBlockProps }) => {
   const isPlaceholder = !props.src || String(props.src).includes("placeholder.com");
 
   const applyImage = (image) => {
+    if (/^data:image\//i.test(image.src || "") && image.src.length > IMAGE_UPLOAD_MAX_DATA_URL_CHARS) {
+      setUrlStatus("This image is still too large. Upload a smaller image or compress it before saving.");
+      return;
+    }
+
     updateBlockProps(block.id, {
       src: image.src,
       alt: image.alt || props.alt || image.name || "Email image",
       width: image.width || props.width || 600,
-      height: image.height || props.height || 320
+      height: image.height || props.height || 320,
+      bannerWidth: image.width || props.bannerWidth || props.width || 600,
+      bannerHeight: image.height || props.bannerHeight || props.height || 320,
+      imageWidth: image.width || props.imageWidth || props.width || 600,
+      imageHeight: image.height || props.imageHeight || props.height || 320
     });
     setMenuOpen(false);
   };
@@ -5152,11 +5701,11 @@ const ImageCanvasBlock = ({ block, selected, updateBlockProps }) => {
     })],
     ["Get Stock Images", () => applyImage(defaultImageGallery[1])],
     ["Get Icons", () => applyImage({
-      src: "https://via.placeholder.com/600x220.png?text=Icon+Set",
+      src: createPlaceholderImage("Icon Set", 600, 220),
       alt: "Icon set"
     })],
     ["Get GIFs & Stickers", () => applyImage({
-      src: "https://via.placeholder.com/600x220.png?text=GIF+or+Sticker",
+      src: createPlaceholderImage("GIF or Sticker", 600, 220),
       alt: "GIF or sticker"
     })],
     ["Get Illustrations", () => applyImage({
@@ -5565,7 +6114,122 @@ const getStoredImageGallery = () => {
   }
 };
 
-const ImageBlockEditor = ({ block, updateBlockProps }) => {
+const getAssetUploadEndpoint = (editorConfig) => (
+  editorConfig?.assetUploadEndpoint ||
+  editorConfig?.assetUpload?.endpoint ||
+  editorConfig?.assets?.uploadEndpoint ||
+  "/api/templates/assets"
+);
+
+const getAssetUploadUrl = (editorConfig) => {
+  const endpoint = getAssetUploadEndpoint(editorConfig);
+  return /^https?:\/\//i.test(endpoint) ? endpoint : apiUrl(endpoint);
+};
+
+const IMAGE_UPLOAD_MAX_DIMENSION = 420;
+const IMAGE_UPLOAD_MIN_DIMENSION = 220;
+const IMAGE_UPLOAD_INITIAL_QUALITY = 0.42;
+const IMAGE_UPLOAD_MIN_QUALITY = 0.16;
+const IMAGE_UPLOAD_MAX_DATA_URL_CHARS = 60000;
+
+const formatFileSize = (bytes) => {
+  if (!bytes) {
+    return "0 KB";
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const loadImageElement = (src) => new Promise((resolve, reject) => {
+  const image = new window.Image();
+  image.onload = () => resolve(image);
+  image.onerror = reject;
+  image.src = src;
+});
+
+const resizeImageFile = async (file) => {
+  const originalDataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+  const image = await loadImageElement(originalDataUrl);
+  const scale = Math.min(
+    1,
+    IMAGE_UPLOAD_MAX_DIMENSION / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height)
+  );
+  let width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
+  let height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d");
+
+  if (!context) {
+    return {
+      dataUrl: originalDataUrl,
+      width: image.naturalWidth || image.width,
+      height: image.naturalHeight || image.height,
+      compressed: false,
+      originalSize: file.size,
+      outputSize: Math.ceil(originalDataUrl.length * 0.75)
+    };
+  }
+
+  let quality = IMAGE_UPLOAD_INITIAL_QUALITY;
+  let dataUrl = originalDataUrl;
+
+  const renderCompressedImage = () => {
+    canvas.width = width;
+    canvas.height = height;
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    context.clearRect(0, 0, width, height);
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, width, height);
+    context.drawImage(image, 0, 0, width, height);
+    return canvas.toDataURL("image/jpeg", quality);
+  };
+
+  while (quality >= IMAGE_UPLOAD_MIN_QUALITY) {
+    dataUrl = renderCompressedImage();
+
+    if (dataUrl.length <= IMAGE_UPLOAD_MAX_DATA_URL_CHARS) {
+      break;
+    }
+
+    quality -= 0.08;
+  }
+
+  quality = IMAGE_UPLOAD_MIN_QUALITY;
+
+  while (
+    dataUrl.length > IMAGE_UPLOAD_MAX_DATA_URL_CHARS &&
+    Math.max(width, height) > IMAGE_UPLOAD_MIN_DIMENSION
+  ) {
+    const nextScale = Math.max(
+      IMAGE_UPLOAD_MIN_DIMENSION / Math.max(width, height),
+      0.78
+    );
+    width = Math.max(1, Math.round(width * nextScale));
+    height = Math.max(1, Math.round(height * nextScale));
+    dataUrl = renderCompressedImage();
+  }
+
+  return {
+    dataUrl,
+    width,
+    height,
+    compressed: dataUrl !== originalDataUrl,
+    originalSize: file.size,
+    outputSize: Math.ceil(dataUrl.length * 0.75)
+  };
+};
+
+const ImageBlockEditor = ({ block, updateBlockProps, editorConfig }) => {
   const props = block.props || {};
   const [imageTab, setImageTab] = useState("url");
   const [draftUrl, setDraftUrl] = useState(props.src || "");
@@ -5586,11 +6250,20 @@ const ImageBlockEditor = ({ block, updateBlockProps }) => {
   };
 
   const applyImage = (image) => {
+    if (/^data:image\//i.test(image.src || "") && image.src.length > IMAGE_UPLOAD_MAX_DATA_URL_CHARS) {
+      setUrlStatus("This image is still too large. Upload a smaller image or compress it before saving.");
+      return;
+    }
+
     updateBlockProps(block.id, {
       src: image.src,
       alt: image.alt || props.alt || image.name || "Email image",
       width: image.width || props.width || 600,
-      height: image.height || props.height || 320
+      height: image.height || props.height || 320,
+      bannerWidth: image.width || props.bannerWidth || props.width || 600,
+      bannerHeight: image.height || props.bannerHeight || props.height || 320,
+      imageWidth: image.width || props.imageWidth || props.width || 600,
+      imageHeight: image.height || props.imageHeight || props.height || 320
     });
     setDraftUrl(image.src);
     setUrlStatus("");
@@ -5631,18 +6304,39 @@ const ImageBlockEditor = ({ block, updateBlockProps }) => {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
+    try {
+      setUrlStatus(`Compressing ${formatFileSize(file.size)} image...`);
+      const resizedImage = await resizeImageFile(file);
+
+      setUrlStatus(`Uploading compressed image (${formatFileSize(resizedImage.outputSize)})...`);
+      const response = await axios.post(getAssetUploadUrl(editorConfig), {
+        image: resizedImage.dataUrl,
+        fileName: file.name.replace(/\.[^.]+$/, ".jpg"),
+        category: "images"
+      });
+      const assetUrl = response.data?.asset?.url || response.data?.url;
+
+      if (!assetUrl || /^data:image\//i.test(assetUrl)) {
+        throw new Error("Upload response did not include a hosted asset URL.");
+      }
+
       applyImage({
         name: file.name,
-        src: reader.result,
+        src: assetUrl,
         alt: file.name.replace(/\.[^.]+$/, ""),
-        width: props.width || 600,
-        height: props.height || 320
+        width: resizedImage.width || props.width || 600,
+        height: resizedImage.height || props.height || 320
       });
-      setUrlStatus("Local preview added. Use hosted URLs before final sending.");
-    };
-    reader.readAsDataURL(file);
+      setUrlStatus(`Image compressed from ${formatFileSize(resizedImage.originalSize)} to ${formatFileSize(resizedImage.outputSize)} and uploaded.`);
+    } catch (error) {
+      console.log(error);
+      const status = error.response?.status;
+      setUrlStatus(status === 413
+        ? "Image is still too large for the server after compression. Try a smaller image."
+        : "Image upload failed. Check the asset endpoint and try again.");
+    } finally {
+      event.target.value = "";
+    }
   };
 
   return (
@@ -5749,7 +6443,7 @@ const ImageBlockEditor = ({ block, updateBlockProps }) => {
             className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-emerald-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-emerald-700"
           />
           <p className="mt-2 text-xs text-slate-500">
-            Local images are useful for design preview. Hosted image URLs are recommended for final emails.
+            Images upload to the template asset library and are saved as public URLs for email.
           </p>
         </div>
       )}
@@ -5757,8 +6451,14 @@ const ImageBlockEditor = ({ block, updateBlockProps }) => {
       <InputField label="Link" value={props.href || ""} onChange={(event) => updateBlockProps(block.id, { href: event.target.value })} />
       <InputField label="Alt Text" value={props.alt || ""} onChange={(event) => updateBlockProps(block.id, { alt: event.target.value })} />
       <div className="grid grid-cols-2 gap-3">
-        <InputField label="Width" type="number" value={props.width || 600} onChange={(event) => updateBlockProps(block.id, { width: Number(event.target.value) })} />
-        <InputField label="Height" type="number" value={props.height || 320} onChange={(event) => updateBlockProps(block.id, { height: Number(event.target.value) })} />
+        <InputField label="Width" type="number" value={props.width || 600} onChange={(event) => {
+          const value = Number(event.target.value);
+          updateBlockProps(block.id, { width: value, bannerWidth: value, imageWidth: value });
+        }} />
+        <InputField label="Height" type="number" value={props.height || 320} onChange={(event) => {
+          const value = Number(event.target.value);
+          updateBlockProps(block.id, { height: value, bannerHeight: value, imageHeight: value });
+        }} />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <InputField label="Mobile Width" type="number" value={props.mobileWidth || Math.min(Number(props.width || 600), 320)} onChange={(event) => updateBlockProps(block.id, { mobileWidth: Number(event.target.value) })} />
@@ -5786,7 +6486,7 @@ const ImageBlockEditor = ({ block, updateBlockProps }) => {
   );
 };
 
-const BlockEditor = ({ block, updateBlockProps, updateFormField, addFormField, removeFormField }) => {
+const BlockEditor = ({ block, updateBlockProps, updateFormField, addFormField, removeFormField, editorConfig }) => {
   const props = block.props || {};
 
   if (block.type === "heading" || block.type === "text") {
@@ -5811,13 +6511,20 @@ const BlockEditor = ({ block, updateBlockProps, updateFormField, addFormField, r
           <InputField label="Weight" value={props.fontWeight || (block.type === "heading" ? "700" : "400")} onChange={(event) => updateBlockProps(block.id, { fontWeight: event.target.value })} />
           <InputField label="Line Height" value={props.lineHeight || "1.45"} onChange={(event) => updateBlockProps(block.id, { lineHeight: event.target.value })} />
         </div>
+        <InputField label="Padding" value={props.padding || ""} placeholder="0 or 12px 16px" onChange={(event) => updateBlockProps(block.id, { padding: event.target.value })} />
+        <div className="grid grid-cols-4 gap-2">
+          <InputField label="Top" type="number" value={props.paddingTop ?? 0} onChange={(event) => updateBlockProps(block.id, { paddingTop: Number(event.target.value) })} />
+          <InputField label="Right" type="number" value={props.paddingRight ?? 0} onChange={(event) => updateBlockProps(block.id, { paddingRight: Number(event.target.value) })} />
+          <InputField label="Bottom" type="number" value={props.paddingBottom ?? 0} onChange={(event) => updateBlockProps(block.id, { paddingBottom: Number(event.target.value) })} />
+          <InputField label="Left" type="number" value={props.paddingLeft ?? 0} onChange={(event) => updateBlockProps(block.id, { paddingLeft: Number(event.target.value) })} />
+        </div>
         <ColorField label="Color" value={props.color || "#111827"} onChange={(event) => updateBlockProps(block.id, { color: event.target.value })} />
       </div>
     );
   }
 
   if (block.type === "image") {
-    return <ImageBlockEditor block={block} updateBlockProps={updateBlockProps} />;
+    return <ImageBlockEditor block={block} updateBlockProps={updateBlockProps} editorConfig={editorConfig} />;
   }
 
   if (block.type === "button") {
@@ -5925,7 +6632,8 @@ const BlockEditor = ({ block, updateBlockProps, updateFormField, addFormField, r
                       updateSocialLink(index, {
                         iconKey: event.target.value,
                         label: link.label || option?.label || "Social",
-                        icon: (option?.label || "so").slice(0, 2).toLowerCase()
+                        icon: (option?.label || "so").slice(0, 2).toLowerCase(),
+                        iconUrl: socialLogoUrls[event.target.value] || ""
                       });
                     }}
                     className={inputClass}
@@ -5935,6 +6643,8 @@ const BlockEditor = ({ block, updateBlockProps, updateFormField, addFormField, r
                     ))}
                   </select>
                 </div>
+                <input value={link.iconUrl || link.logoUrl || ""} onChange={(event) => updateSocialLink(index, { iconUrl: event.target.value })} placeholder="Icon URL" className={inputClass} />
+                <ColorField label="Logo Background" value={link.backgroundColor || link.iconBackgroundColor || props.iconBackgroundColor || "#0f172a"} onChange={(event) => updateSocialLink(index, { backgroundColor: event.target.value, iconBackgroundColor: event.target.value })} />
                 <input value={link.href || ""} onChange={(event) => updateSocialLink(index, { href: event.target.value })} placeholder="https://..." className={inputClass} />
                 <button type="button" onClick={() => removeSocialLink(index)} className="justify-self-end rounded-md border border-red-200 px-2 py-1 text-xs font-bold text-red-600">
                   Remove
@@ -5978,6 +6688,15 @@ const BlockEditor = ({ block, updateBlockProps, updateFormField, addFormField, r
         <div className="grid grid-cols-2 gap-3">
           <ColorField label="Form Background" value={props.formBackgroundColor || "#ffffff"} onChange={(event) => updateBlockProps(block.id, { formBackgroundColor: event.target.value })} />
           <ColorField label="Border Color" value={props.borderColor || "#e2e8f0"} onChange={(event) => updateBlockProps(block.id, { borderColor: event.target.value })} />
+          <InputField label="Border Width" type="number" value={props.borderWidth ?? 1} onChange={(event) => updateBlockProps(block.id, { borderWidth: Number(event.target.value) })} />
+          <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+            <input
+              type="checkbox"
+              checked={Boolean(props.formBackgroundTransparent)}
+              onChange={(event) => updateBlockProps(block.id, { formBackgroundTransparent: event.target.checked })}
+            />
+            No form background
+          </label>
         </div>
         <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
           <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">Background Image</p>
@@ -6061,7 +6780,6 @@ const BlockEditor = ({ block, updateBlockProps, updateFormField, addFormField, r
           onChange={(patch) => updateBlockProps(block.id, patch)}
           keys={{ color: "descriptionColor", size: "descriptionSize", weight: "descriptionWeight" }}
         />
-        <ColorField label="Input Background" value={props.inputBackgroundColor || "#f8fafc"} onChange={(event) => updateBlockProps(block.id, { inputBackgroundColor: event.target.value })} />
         <TextStyleGroup
           title="Input Label"
           colorLabel="Label Color"
@@ -6077,9 +6795,20 @@ const BlockEditor = ({ block, updateBlockProps, updateFormField, addFormField, r
         <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
           <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">Field Box</p>
           <div className="grid grid-cols-2 gap-3">
+            <ColorField label="Field Background" value={props.inputBackgroundColor || "#f8fafc"} onChange={(event) => updateBlockProps(block.id, { inputBackgroundColor: event.target.value })} />
+            <ColorField label="Field Border Color" value={props.inputBorderColor || "#e2e8f0"} onChange={(event) => updateBlockProps(block.id, { inputBorderColor: event.target.value })} />
+            <InputField label="Field Border Width" type="number" value={props.inputBorderWidth ?? 1} onChange={(event) => updateBlockProps(block.id, { inputBorderWidth: Number(event.target.value) })} />
             <InputField label="Field Width" value={props.inputWidth || "100%"} onChange={(event) => updateBlockProps(block.id, { inputWidth: event.target.value })} />
             <InputField label="Field Height" type="number" value={props.inputHeight ?? 40} onChange={(event) => updateBlockProps(block.id, { inputHeight: Number(event.target.value) })} />
             <InputField label="Field Radius" type="number" value={props.inputRadius ?? 6} onChange={(event) => updateBlockProps(block.id, { inputRadius: Number(event.target.value) })} />
+            <label className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
+              <input
+                type="checkbox"
+                checked={Boolean(props.inputBackgroundTransparent)}
+                onChange={(event) => updateBlockProps(block.id, { inputBackgroundTransparent: event.target.checked })}
+              />
+              No field background
+            </label>
             <label className="block text-sm font-semibold text-slate-700">
               Field Align
               <select value={props.inputAlign || "left"} onChange={(event) => updateBlockProps(block.id, { inputAlign: event.target.value })} className={`mt-2 ${inputClass}`}>
@@ -6129,6 +6858,61 @@ const BlockEditor = ({ block, updateBlockProps, updateFormField, addFormField, r
             <InputField label="Field Gap" type="number" value={props.fieldGap ?? 10} onChange={(event) => updateBlockProps(block.id, { fieldGap: Number(event.target.value) })} />
             <InputField label="Label Gap" type="number" value={props.labelGap ?? 5} onChange={(event) => updateBlockProps(block.id, { labelGap: Number(event.target.value) })} />
             <InputField label="Button Top Gap" type="number" value={props.buttonTopGap ?? 12} onChange={(event) => updateBlockProps(block.id, { buttonTopGap: Number(event.target.value) })} />
+          </div>
+        </div>
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3">
+          <p className="mb-3 text-xs font-bold uppercase tracking-wide text-emerald-700">Success</p>
+          <div className="grid gap-3">
+            <InputField label="Thank You Title" value={props.thankYouTitle || "Thank you"} onChange={(event) => updateBlockProps(block.id, { thankYouTitle: event.target.value })} />
+            <label className="block text-sm font-semibold text-slate-700">
+              Thank You Message
+              <textarea
+                value={props.thankYouText || "Your response was submitted."}
+                onChange={(event) => updateBlockProps(block.id, { thankYouText: event.target.value })}
+                rows={2}
+                className={`mt-2 ${inputClass}`}
+              />
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <ColorField label="Background" value={props.thankYouBackgroundColor || "#ecfdf5"} onChange={(event) => updateBlockProps(block.id, { thankYouBackgroundColor: event.target.value })} />
+              <ColorField label="Border" value={props.thankYouBorderColor || "#34d399"} onChange={(event) => updateBlockProps(block.id, { thankYouBorderColor: event.target.value })} />
+              <ColorField label="Title Color" value={props.thankYouTitleColor || "#047857"} onChange={(event) => updateBlockProps(block.id, { thankYouTitleColor: event.target.value })} />
+              <ColorField label="Message Color" value={props.thankYouTextColor || "#064e3b"} onChange={(event) => updateBlockProps(block.id, { thankYouTextColor: event.target.value })} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <InputField label="Radius" type="number" value={props.thankYouRadius ?? 10} onChange={(event) => updateBlockProps(block.id, { thankYouRadius: Number(event.target.value) })} />
+              <InputField label="Padding" value={props.thankYouPadding || "16px"} onChange={(event) => updateBlockProps(block.id, { thankYouPadding: event.target.value })} />
+              <InputField label="Title Size" type="number" value={props.thankYouTitleSize ?? 18} onChange={(event) => updateBlockProps(block.id, { thankYouTitleSize: Number(event.target.value) })} />
+              <InputField label="Message Size" type="number" value={props.thankYouTextSize ?? 14} onChange={(event) => updateBlockProps(block.id, { thankYouTextSize: Number(event.target.value) })} />
+            </div>
+            <div
+              className="rounded-md border p-4 text-center"
+              style={{
+                backgroundColor: props.thankYouBackgroundColor || "#ecfdf5",
+                borderColor: props.thankYouBorderColor || "#34d399",
+                borderRadius: `${Number(props.thankYouRadius ?? 10)}px`,
+                padding: props.thankYouPadding || "16px"
+              }}
+            >
+              <div
+                className="font-extrabold"
+                style={{
+                  color: props.thankYouTitleColor || "#047857",
+                  fontSize: `${Number(props.thankYouTitleSize ?? 18)}px`
+                }}
+              >
+                {props.thankYouTitle || "Thank you"}
+              </div>
+              <div
+                className="mt-1 font-semibold"
+                style={{
+                  color: props.thankYouTextColor || "#064e3b",
+                  fontSize: `${Number(props.thankYouTextSize ?? 14)}px`
+                }}
+              >
+                {props.thankYouText || "Your response was submitted."}
+              </div>
+            </div>
           </div>
         </div>
         <div>
@@ -6447,7 +7231,18 @@ const BlockEditor = ({ block, updateBlockProps, updateFormField, addFormField, r
   }
 
   if (block.type === "divider") {
-    return <ColorField label="Color" value={props.color || "#e5e7eb"} onChange={(event) => updateBlockProps(block.id, { color: event.target.value })} />;
+    return (
+      <div className="grid gap-3">
+        <ColorField label="Color" value={props.color || "#e5e7eb"} onChange={(event) => updateBlockProps(block.id, { color: event.target.value })} />
+        <InputField label="Margin" value={props.margin || "12px 0"} placeholder="12px 0" onChange={(event) => updateBlockProps(block.id, { margin: event.target.value })} />
+        <div className="grid grid-cols-4 gap-2">
+          <InputField label="Top" type="number" value={props.marginTop ?? 12} onChange={(event) => updateBlockProps(block.id, { marginTop: Number(event.target.value) })} />
+          <InputField label="Right" type="number" value={props.marginRight ?? 0} onChange={(event) => updateBlockProps(block.id, { marginRight: Number(event.target.value) })} />
+          <InputField label="Bottom" type="number" value={props.marginBottom ?? 12} onChange={(event) => updateBlockProps(block.id, { marginBottom: Number(event.target.value) })} />
+          <InputField label="Left" type="number" value={props.marginLeft ?? 0} onChange={(event) => updateBlockProps(block.id, { marginLeft: Number(event.target.value) })} />
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -6538,16 +7333,16 @@ const LegacySavedTemplates = ({
       {!listLoading && templates.length === 0 && <p className="text-sm text-slate-500">No templates saved yet.</p>}
       {templates.map((item) => (
         <button
-          key={item._id}
+          key={templateIdentifier(item) || templateText(item, "name", "saved-template")}
           type="button"
           draggable
           onDragStart={(event) => {
-            event.dataTransfer.setData("template/id", item._id);
+            event.dataTransfer.setData("template/id", templateIdentifier(item));
             event.dataTransfer.effectAllowed = "copy";
           }}
-          onClick={() => loadSavedTemplate(item._id)}
+          onClick={() => loadSavedTemplate(item)}
           className={`cursor-grab rounded-lg border bg-white p-3 text-left shadow-sm hover:border-emerald-400 hover:bg-emerald-50 active:cursor-grabbing ${
-            activeTemplateId === item._id ? "border-emerald-500 bg-emerald-50" : "border-slate-200"
+            activeTemplateId === templateIdentifier(item) ? "border-emerald-500 bg-emerald-50" : "border-slate-200"
           }`}
         >
           <div className="flex items-start justify-between gap-3">

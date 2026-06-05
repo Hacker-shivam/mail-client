@@ -7,7 +7,13 @@ export const DEFAULT_THEME = {
   primaryColor: "#0f766e",
   textColor: "#111827",
   mutedColor: "#64748b",
-  fontFamily: "Arial, sans-serif"
+  fontFamily: "Arial, sans-serif",
+  thankYouBackgroundColor: "#ecfdf5",
+  thankYouTitleColor: "#047857",
+  thankYouTextColor: "#064e3b",
+  thankYouBorderColor: "#34d399",
+  thankYouTitle: "Thank you",
+  thankYouText: "Your response was submitted."
 };
 
 export const INTERACTIVE_BLOCK_TYPES = new Set([

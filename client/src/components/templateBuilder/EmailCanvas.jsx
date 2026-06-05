@@ -24,6 +24,7 @@ import {
   X
 } from "lucide-react";
 import { interpolateVariables } from "../../lib/templateStudio";
+import { apiUrl } from "../../api/Api";
 import DropZone from "./DropZone";
 
 const imageGallery = [
@@ -44,20 +45,40 @@ const imageGallery = [
   }
 ];
 
+const templateAssetUrl = (path) => apiUrl(`/template-assets/${path}`);
+
 const socialBrandIcons = {
-  facebook: { text: "f", color: "#1877f2" },
-  instagram: { text: "ig", color: "#e4405f" },
+  facebook: { text: "f", color: "#1877f2", src: templateAssetUrl("social-logos/facebook.svg") },
+  instagram: { text: "ig", color: "#e4405f", src: templateAssetUrl("social-logos/instagram.svg") },
   linkedin: { text: "in", color: "#0a66c2" },
-  youtube: { text: "yt", color: "#ff0000" },
-  x: { text: "x", color: "#000000" },
-  twitter: { text: "x", color: "#000000" },
-  whatsapp: { text: "wa", color: "#25d366" },
+  youtube: { text: "yt", color: "#ff0000", src: templateAssetUrl("social-logos/youtube.svg") },
+  x: { text: "x", color: "#000000", src: templateAssetUrl("social-logos/x.svg") },
+  twitter: { text: "x", color: "#000000", src: templateAssetUrl("social-logos/x.svg") },
+  whatsapp: { text: "wa", color: "#25d366", src: templateAssetUrl("social-logos/whatsapp.svg") },
   telegram: { text: "tg", color: "#26a5e4" },
   tiktok: { text: "tt", color: "#000000" },
   threads: { text: "@", color: "#000000" },
   email: { text: "@", color: "#ea4335" },
   website: { text: "www", color: "#4285f4" },
   link: { text: "go", color: "#0f766e" }
+};
+
+const legacySocialLogoUrls = {
+  "facebook-logo.svg": socialBrandIcons.facebook.src,
+  "facebook_dnmevs.svg": socialBrandIcons.facebook.src,
+  "instagram-logo.svg": socialBrandIcons.instagram.src,
+  "instagram_tzptb7.svg": socialBrandIcons.instagram.src,
+  "youtube-logo.svg": socialBrandIcons.youtube.src,
+  "youtube_w6vzni.svg": socialBrandIcons.youtube.src,
+  "x-logo.svg": socialBrandIcons.x.src,
+  "x_urkz34.svg": socialBrandIcons.x.src,
+  "whatsapp-logo.svg": socialBrandIcons.whatsapp.src,
+  "whatsapp_gma4kg.svg": socialBrandIcons.whatsapp.src
+};
+
+const normalizeSocialLogoUrl = (url) => {
+  const fileName = String(url || "").split("/").pop();
+  return legacySocialLogoUrls[fileName] || url;
 };
 
 const getSocialBrandIcon = (link = {}) => {
@@ -91,6 +112,7 @@ const EmailCanvas = ({
   const canvasWidth = viewport === "email"
     ? Number(theme.width || 600)
     : viewportWidths[viewport];
+  const isMobileViewport = viewport === "mobile";
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 8 }
@@ -135,9 +157,15 @@ const EmailCanvas = ({
             <div
               className="mx-auto min-h-[720px]"
               style={{
-                width: "100%",
-                maxWidth: `${Number(theme.width || 600)}px`,
+                width: isMobileViewport ? "100%" : `${Number(theme.width || 600)}px`,
+                maxWidth: isMobileViewport ? "100%" : "100%",
                 backgroundColor: theme.contentColor || "#ffffff",
+                backgroundImage: theme.backgroundImageUrl
+                  ? `${theme.backgroundOverlayColor ? `linear-gradient(${theme.backgroundOverlayColor}, ${theme.backgroundOverlayColor}), ` : ""}url("${theme.backgroundImageUrl}")`
+                  : undefined,
+                backgroundSize: theme.backgroundImageUrl ? (theme.backgroundImageSize || "cover") : undefined,
+                backgroundPosition: theme.backgroundImageUrl ? (theme.backgroundImagePosition || "center") : undefined,
+                backgroundRepeat: theme.backgroundImageUrl ? (theme.backgroundImageRepeat || "no-repeat") : undefined,
                 border: `${Number(theme.borderWidth || 0)}px solid ${theme.borderColor || "#e2e8f0"}`,
                 borderRadius: `${Number(theme.radius || 0)}px`,
                 overflow: "hidden"
@@ -444,7 +472,7 @@ const BlockRenderer = ({ block, theme, updateBlockProps }) => {
   }
 
   if (block.type === "social") {
-    return <SocialBlock block={block} theme={theme} />;
+    return <SocialBlock block={block} theme={theme} updateBlockProps={updateBlockProps} />;
   }
 
   if (block.type === "card" || block.type === "hero" || block.type === "offer" || block.type === "coupon") {
@@ -568,7 +596,7 @@ const ButtonBlock = ({ block, theme, updateBlockProps }) => {
   );
 };
 
-const SocialBlock = ({ block, theme }) => {
+const SocialBlock = ({ block, theme, updateBlockProps }) => {
   const props = block.props || {};
   const links = Array.isArray(props.links) ? props.links : [];
 
@@ -601,6 +629,7 @@ const SocialBlock = ({ block, theme }) => {
           const isText = layout === "text";
           const isIcons = layout === "icons";
           const brand = getSocialBrandIcon(link);
+          const logoSrc = normalizeSocialLogoUrl(link.iconUrl || link.logoUrl || brand.src);
           const iconText = link.icon || brand.text || String(link.label || "so").slice(0, 2).toLowerCase();
           const badgeSize = Number(props.iconSize ?? 18);
 
@@ -611,7 +640,11 @@ const SocialBlock = ({ block, theme }) => {
               style={{
                 backgroundColor: isText
                   ? "transparent"
-                  : (props.useBrandColors === false ? (props.iconBackgroundColor || props.backgroundColor || theme.primaryColor || "#0f172a") : brand.color),
+                  : (link.backgroundColor || link.iconBackgroundColor || (
+                    props.useBrandColors === false
+                      ? (props.iconBackgroundColor || props.backgroundColor || theme.primaryColor || "#0f172a")
+                      : brand.color
+                  )),
                 color: isText ? (props.textColor || theme.primaryColor || "#0f766e") : (props.iconColor || "#ffffff"),
                 borderRadius: isText ? 0 : `${Number(props.radius ?? 999)}px`,
                 padding: isText ? "0" : (props.itemPadding || "9px 13px"),
@@ -635,7 +668,17 @@ const SocialBlock = ({ block, theme }) => {
                   width: `${badgeSize}px`
                 }}
               >
-                {iconText}
+                {logoSrc ? (
+                  <img
+                    src={logoSrc}
+                    alt=""
+                    className="block"
+                    style={{
+                      height: `${badgeSize}px`,
+                      width: `${badgeSize}px`
+                    }}
+                  />
+                ) : iconText}
               </span>
               {!isIcons && <span>{link.label || "Social"}</span>}
             </span>
@@ -688,6 +731,40 @@ const CardBlock = ({ block, theme, updateBlockProps }) => {
     </div>
   );
 };
+
+const FormSuccessPreview = ({ props, theme }) => (
+  <div
+    className="rounded-lg border p-4 text-center"
+    style={{
+      backgroundColor: props.thankYouBackgroundColor || theme.thankYouBackgroundColor || "#ecfdf5",
+      borderColor: props.thankYouBorderColor || theme.thankYouBorderColor || "#34d399",
+      borderRadius: `${Number(props.thankYouRadius || theme.thankYouRadius || 10)}px`,
+      padding: props.thankYouPadding || theme.thankYouPadding || "16px",
+      margin: props.thankYouMargin || theme.thankYouMargin || "14px 0 0"
+    }}
+  >
+    <div
+      className="font-extrabold"
+      style={{
+        color: props.thankYouTitleColor || theme.thankYouTitleColor || "#047857",
+        fontSize: `${Number(props.thankYouTitleSize || theme.thankYouTitleSize || 18)}px`,
+        fontWeight: props.thankYouTitleWeight || theme.thankYouTitleWeight || 800
+      }}
+    >
+      {props.thankYouTitle || theme.thankYouTitle || "Thank you"}
+    </div>
+    <div
+      className="mt-1 font-semibold"
+      style={{
+        color: props.thankYouTextColor || theme.thankYouTextColor || "#064e3b",
+        fontSize: `${Number(props.thankYouTextSize || theme.thankYouTextSize || 14)}px`,
+        fontWeight: props.thankYouTextWeight || theme.thankYouTextWeight || 600
+      }}
+    >
+      {props.thankYouText || theme.thankYouText || "Your response was submitted."}
+    </div>
+  </div>
+);
 
 const FormBlock = ({ block, theme, updateBlockProps }) => {
   const props = block.props || {};
@@ -837,6 +914,7 @@ const FormBlock = ({ block, theme, updateBlockProps }) => {
           {props.submitText || "Submit"}
         </div>
       </div>
+      <FormSuccessPreview props={props} theme={theme} />
     </div>
   );
 };
@@ -873,7 +951,11 @@ const ImageBlock = ({ block, theme, updateBlockProps }) => {
       src: image.src,
       alt: image.alt || props.alt || image.name || "Email image",
       width: image.width || props.width || 600,
-      height: image.height || props.height || "auto"
+      height: image.height || props.height || "auto",
+      bannerWidth: image.width || props.bannerWidth || props.width || 600,
+      bannerHeight: image.height || props.bannerHeight || props.height || "auto",
+      imageWidth: image.width || props.imageWidth || props.width || 600,
+      imageHeight: image.height || props.imageHeight || props.height || "auto"
     });
     setMenuOpen(false);
   };
@@ -935,7 +1017,7 @@ const ImageBlock = ({ block, theme, updateBlockProps }) => {
           alt={props.alt || ""}
           className="block h-auto w-full object-contain"
           style={{
-            maxWidth: "100%",
+            maxWidth: `${Number(props.width || props.bannerWidth || props.imageWidth || theme.desktopImageWidth || theme.bannerWidth || 240)}px`,
             width: "100%",
             objectFit: props.objectFit || "contain"
           }}
